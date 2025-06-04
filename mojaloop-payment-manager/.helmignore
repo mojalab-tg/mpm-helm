@@ -20,3 +20,6 @@
 .idea/
 *.tmproj
 .vscode/
+#values
+.values-dev.yaml
+.values-prod.yaml

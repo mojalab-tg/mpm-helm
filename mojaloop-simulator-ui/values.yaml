@@ -1,0 +1,23 @@
+image:
+  repository: mojaloop/mojaloop-simulator-ui
+  tag: v0.1.0
+  pullPolicy: IfNotPresent
+
+service:
+  port: 6060
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: mojaloop-ui.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+env:
+  API_BASE_URL: "http://localhost:5051"
+  AUTH_ENABLED: "FALSE"

@@ -13,3 +13,6 @@ Chart.lock
 # Linting
 test/**
 node_modules
+
+values-dev.yaml
+values-prod.yaml

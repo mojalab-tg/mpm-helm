@@ -1,0 +1,183 @@
+# Default values for vault chart
+
+# Global configuration
+global:
+  imageRegistry: ""
+  storageClass: "microk8s-hostpath"
+
+# Vault configuration using Bitnami chart
+vault:
+  enabled: true
+
+  # HA Configuration - supports 1-3 replicas
+  replicaCount: 1
+
+  # Bitnami Vault image configuration
+  image:
+    registry: docker.io
+    repository: vault
+    tag: "1.4.2"
+    pullPolicy: IfNotPresent
+
+  # Auto-init configuration
+  init:
+    enabled: true
+    # Choose initialization method:
+    # "helm-hook" - Use Helm post-install hook
+    # "standard-job" - Use standard Kubernetes Job (recommended for MicroK8s)
+    # "manual" - Disable auto-init, use manual scripts
+    method: "standard-job"
+    # For standard-job method
+    useStandardJob: true
+    # Enable debug mode to see detailed logs
+    debug: true
+    # Number of key shares
+    secretShares: 5
+    # Number of key threshold
+    secretThreshold: 3
+
+  # Auto-unseal configuration
+  unsealer:
+    enabled: true
+    # Unseal configuration will be handled by init containers
+    domain: "localhost" # Used for PKI configuration
+
+  # Storage configuration
+  persistence:
+    enabled: true
+    storageClass: "microk8s-hostpath"
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+
+  # Ingress configuration
+  ingress:
+    enabled: false
+    className: "public"
+    annotations:
+      # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      # nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+      # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - host: vault.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: vault-tls
+    #    hosts:
+    #      - vault.local
+
+  # Resource configuration
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  # RBAC configuration
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+  rbac:
+    create: true
+
+  # Security Context
+  securityContext:
+    enabled: true
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
+    runAsNonRoot: false
+
+  # Pod Security Context
+  podSecurityContext:
+    enabled: true
+    fsGroupChangePolicy: "OnRootMismatch"
+
+  # Health checks
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /v1/sys/health?standbyok=true
+      port: 8200
+      scheme: HTTP
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    successThreshold: 1
+    failureThreshold: 3
+    timeoutSeconds: 5
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /v1/sys/health?standbyok=true
+      port: 8200
+      scheme: HTTP
+    initialDelaySeconds: 30
+    periodSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+    timeoutSeconds: 3
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  # Monitoring
+  metrics:
+    enabled: false
+    serviceMonitor:
+      enabled: false
+      namespace: ""
+      interval: 30s
+      labels: {}
+
+  # Affinity and topology
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vault
+            topologyKey: kubernetes.io/hostname
+
+  # Additional configurations
+  extraEnvVars: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+  # Shared volume configuration for external pod communication
+  sharedVolume:
+    enabled: true
+    # HostPath for multi-pod access
+    hostPath: "/tmp/vault-shared"
+
+  # Configuration for auto-init and auto-unseal
+  configuration: |
+    ui = true
+    api_addr = "http://0.0.0.0:8200"
+    cluster_addr = "http://0.0.0.0:8201"
+    disable_mlock = true
+
+    storage "file" {
+      path = "/vault/data"
+    }
+
+    listener "tcp" {
+      address = "0.0.0.0:8200"
+      tls_disable = true
+    }

@@ -1,0 +1,18 @@
+{{- if .Values.vault.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vault.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.vault.service.type }}
+  ports:
+    - port: {{ .Values.vault.service.port }}
+      targetPort: {{ .Values.vault.service.targetPort }}
+      protocol: TCP
+      name: api
+  selector:
+    {{- include "vault.selectorLabels" . | nindent 4 }}
+{{- end }}

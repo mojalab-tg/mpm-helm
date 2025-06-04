@@ -1,0 +1,15 @@
+Thank you for installing Mojaloop Simulator UI!
+
+You can access the UI at the following URL (if Ingress is enabled):
+
+{{- if .Values.ingress.enabled }}
+  http://{{ (index .Values.ingress.hosts 0).host }}
+{{- else }}
+  Ingress is not enabled. You may need to port-forward manually:
+
+    kubectl port-forward svc/{{ include "sim-ui.fullname" . }} 6000:6000
+    Then access it via: http://localhost:6000
+{{- end }}
+
+Release name: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}

@@ -1,0 +1,222 @@
+{{- if .Values.vault.enabled }}
+{{- include "vault.validateReplicas" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "vault.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "vault.fullname" . }}-headless
+  replicas: {{ .Values.vault.replicaCount | int }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "vault.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vault.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "vault.serviceAccountName" . }}
+      {{- if .Values.vault.podSecurityContext.enabled }}
+      securityContext:
+        fsGroup: {{ .Values.vault.securityContext.fsGroup }}
+        {{- if .Values.vault.podSecurityContext.fsGroupChangePolicy }}
+        fsGroupChangePolicy: {{ .Values.vault.podSecurityContext.fsGroupChangePolicy }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.vault.affinity }}
+      affinity:
+        {{- toYaml .Values.vault.affinity | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vault
+          image: {{ include "vault.image" . }}
+          imagePullPolicy: {{ .Values.vault.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              vault server -config=/vault/config/vault.hcl
+          ports:
+            - name: api
+              containerPort: 8200
+              protocol: TCP
+            - name: cluster-port
+              containerPort: 8201
+              protocol: TCP
+          env:
+            - name: VAULT_ADDR
+              value: "http://127.0.0.1:8200"
+            - name: VAULT_API_ADDR
+              value: "http://$(POD_IP):8200"
+            - name: VAULT_CLUSTER_ADDR
+              value: "http://$(POD_IP):8201"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- range .Values.vault.extraEnvVars }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          {{- if .Values.vault.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.vault.livenessProbe.httpGet.path }}
+              port: {{ .Values.vault.livenessProbe.httpGet.port }}
+              scheme: {{ .Values.vault.livenessProbe.httpGet.scheme }}
+            initialDelaySeconds: {{ .Values.vault.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.vault.livenessProbe.periodSeconds }}
+            successThreshold: {{ .Values.vault.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.vault.livenessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.vault.livenessProbe.timeoutSeconds }}
+          {{- end }}
+          {{- if .Values.vault.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.vault.readinessProbe.httpGet.path }}
+              port: {{ .Values.vault.readinessProbe.httpGet.port }}
+              scheme: {{ .Values.vault.readinessProbe.httpGet.scheme }}
+            initialDelaySeconds: {{ .Values.vault.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.vault.readinessProbe.periodSeconds }}
+            successThreshold: {{ .Values.vault.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.vault.readinessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.vault.readinessProbe.timeoutSeconds }}
+          {{- end }}
+          {{- if .Values.vault.resources }}
+          resources:
+            {{- toYaml .Values.vault.resources | nindent 12 }}
+          {{- end }}
+          {{- if .Values.vault.securityContext.enabled }}
+          securityContext:
+            runAsUser: {{ .Values.vault.securityContext.runAsUser }}
+            runAsGroup: {{ .Values.vault.securityContext.runAsGroup }}
+            runAsNonRoot: {{ .Values.vault.securityContext.runAsNonRoot }}
+          {{- end }}
+          volumeMounts:
+            - name: vault-config
+              mountPath: /vault/config
+            - name: vault-data
+              mountPath: /vault/data
+            {{- if .Values.vault.unsealer.enabled }}
+            - name: vault-keys
+              mountPath: /vault/keys
+              readOnly: true
+            {{- end }}
+            {{- if .Values.vault.sharedVolume.enabled }}
+            - name: vault-shared
+              mountPath: /tmp/shared
+              readOnly: false
+            {{- end }}
+            {{- range .Values.vault.extraVolumeMounts }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+              {{- if .subPath }}
+              subPath: {{ .subPath }}
+              {{- end }}
+              {{- if .readOnly }}
+              readOnly: {{ .readOnly }}
+              {{- end }}
+            {{- end }}
+        {{- if .Values.vault.unsealer.enabled }}
+        - name: vault-unsealer
+          image: {{ include "vault.image" . }}
+          imagePullPolicy: {{ .Values.vault.image.pullPolicy }}
+          env:
+            - name: VAULT_ADDR
+              value: "http://127.0.0.1:8200"
+            - name: VAULT_SKIP_VERIFY
+              value: "true"
+            - name: DOMAIN
+              value: {{ .Values.vault.unsealer.domain | quote }}
+          command:
+            - /bin/sh
+            - /scripts/unsealer.sh
+          {{- if .Values.vault.securityContext.enabled }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+          {{- end }}
+          volumeMounts:
+            - name: vault-keys
+              mountPath: /vault/keys
+              readOnly: true
+            - name: vault-config
+              mountPath: /scripts
+              readOnly: true
+            {{- if .Values.vault.sharedVolume.enabled }}
+            - name: vault-shared
+              mountPath: /tmp/shared
+              readOnly: false
+            {{- end }}
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        {{- end }}
+      volumes:
+        - name: vault-config
+          configMap:
+            name: {{ include "vault.fullname" . }}-config
+            defaultMode: 0755
+        {{- if .Values.vault.unsealer.enabled }}
+        - name: vault-keys
+          secret:
+            secretName: {{ include "vault.fullname" . }}-keys
+            optional: true
+        {{- end }}
+        {{- if .Values.vault.sharedVolume.enabled }}
+        - name: vault-shared
+          hostPath:
+            path: {{ .Values.vault.sharedVolume.hostPath }}
+            type: DirectoryOrCreate
+        {{- end }}
+        {{- range .Values.vault.extraVolumes }}
+        - name: {{ .name }}
+          {{- if .configMap }}
+          configMap:
+            {{- toYaml .configMap | nindent 12 }}
+          {{- else if .secret }}
+          secret:
+            {{- toYaml .secret | nindent 12 }}
+          {{- else if .emptyDir }}
+          emptyDir:
+            {{- toYaml .emptyDir | nindent 12 }}
+          {{- end }}
+        {{- end }}
+  {{- if .Values.vault.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: vault-data
+        labels:
+          {{- include "vault.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          {{- range .Values.vault.persistence.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.vault.persistence.size | quote }}
+        {{- $storageClass := include "vault.storageClass" . }}
+        {{- if $storageClass }}
+        storageClassName: {{ $storageClass }}
+        {{- end }}
+  {{- end }}
+{{- end }}

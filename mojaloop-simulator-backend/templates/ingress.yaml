@@ -13,13 +13,16 @@ spec:
   ingressClassName: {{ .Values.ingress.ingressClassName }}
 {{- end }}
   rules:
-  - http:
-      paths:
-      - path: /sim/test{{ $.Values.ingress.ingressPathRewriteRegex }}
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: sim-backend
-            port:
-              name: testapi
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- range .Values.ingress.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "sim-backend.fullname" $ }}
+                port:
+                  name: {{ .portName }}
+          {{- end }}
 {{- end }}

@@ -1,0 +1,27 @@
+{{- if and .Values.vault.enabled .Values.vault.metrics.enabled .Values.vault.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "vault.fullname" . }}
+  namespace: {{ .Values.vault.metrics.serviceMonitor.namespace | default .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+    {{- with .Values.vault.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "vault.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: api
+      interval: {{ .Values.vault.metrics.serviceMonitor.interval }}
+      path: /v1/sys/metrics
+      params:
+        format: ['prometheus']
+      tlsConfig:
+        insecureSkipVerify: true
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+{{- end }}

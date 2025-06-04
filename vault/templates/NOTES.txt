@@ -1,0 +1,54 @@
+1. Get the application URL by running these commands:
+{{- if .Values.vault.ingress.enabled }}
+{{- range $host := .Values.vault.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.vault.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.vault.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "vault.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.vault.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "vault.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "vault.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.vault.service.port }}
+{{- else if contains "ClusterIP" .Values.vault.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "{{ include "vault.selectorLabels" . | replace "\n" "," }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+2. Check Vault status:
+   kubectl exec -it --namespace {{ .Release.Namespace }} {{ include "vault.fullname" . }}-0 -- vault status
+
+3. Get the root token (after initialization):
+   kubectl get secret --namespace {{ .Release.Namespace }} {{ include "vault.fullname" . }}-keys -o jsonpath="{.data.root-token}" | base64 -d
+
+{{- if .Values.vault.init.enabled }}
+4. Vault Auto-Init is enabled. The initialization will happen automatically on first startup.
+{{- else }}
+4. To manually initialize Vault:
+   kubectl exec -it --namespace {{ .Release.Namespace }} {{ include "vault.fullname" . }}-0 -- vault operator init
+{{- end }}
+
+{{- if .Values.vault.unsealer.enabled }}
+5. Vault Auto-Unseal is enabled. Unsealing will happen automatically after initialization.
+{{- else }}
+5. To manually unseal Vault (if not using auto-unseal):
+   kubectl exec -it --namespace {{ .Release.Namespace }} {{ include "vault.fullname" . }}-0 -- vault operator unseal
+{{- end }}
+
+{{- if gt (.Values.vault.replicaCount | int) 1 }}
+6. For HA setup with {{ .Values.vault.replicaCount }} replicas:
+   - Check all pods: kubectl get pods --namespace {{ .Release.Namespace }} -l "{{ include "vault.selectorLabels" . | replace "\n" "," }}"
+   - Join additional nodes to cluster after unsealing the first node
+{{- end }}
+
+7. Configure authentication methods and policies as needed through the Vault UI or CLI.
+
+8. Important: Store the root token and unseal keys securely!
+
+For more information, visit: https://www.vaultproject.io/docs

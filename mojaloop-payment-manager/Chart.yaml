@@ -47,8 +47,8 @@ dependencies:
     alias: prometheus
     condition: prometheus.enabled
   - name: vault
-    version: 0.14.0
-    repository: https://helm.releases.hashicorp.com
+    version: 0.1.0
+    repository: file://../vault
     alias: vault
     condition: vault.enabled
   - name: ml-testing-toolkit
@@ -57,14 +57,23 @@ dependencies:
     alias: ttk
     condition: ttk.enabled
   - name: keycloak
-    version: 10.3.0
-    repository: https://codecentric.github.io/helm-charts
+    version: 0.1.0
+    repository: file://../keycloak
     alias: keycloak
     condition: keycloak.enabled
+  - name: kafka
+    version: 0.1.0
+    repository: file://../kafka
+    alias: kafka
+    condition: kafka.enabled
   - name: sim-backend
     version: 1.0.5
     repository: file://../mojaloop-simulator-backend
     condition: sim-backend.enabled
+  - name: sim-ui
+    version: 0.1.0
+    repository: file://../mojaloop-simulator-ui
+    condition: sim-ui.enabled
   - name: common
     version: 1.x.x
     repository: https://charts.bitnami.com/bitnami

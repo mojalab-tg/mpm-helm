@@ -1,0 +1,39 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.kafka.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "kafka.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo kafka://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.kafka.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "kafka.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "kafka.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo kafka://$SERVICE_IP:{{ .Values.kafka.service.port }}
+{{- else if contains "ClusterIP" .Values.kafka.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "{{ include "kafka.selectorLabels" . | replace ": " "=" | replace "\n" "," }}" -o jsonpath="{.items[0].metadata.name}")
+  echo "Connect to Kafka from within the cluster using:"
+  echo "  kubectl exec -it $POD_NAME -- kafka-console-producer.sh --broker-list {{ include "kafka.fullname" . }}:{{ .Values.kafka.service.port }} --topic test"
+  echo "  kubectl exec -it $POD_NAME -- kafka-console-consumer.sh --bootstrap-server {{ include "kafka.fullname" . }}:{{ .Values.kafka.service.port }} --topic test --from-beginning"
+{{- end }}
+
+2. Bootstrap servers for Kafka clients:
+   Internal: {{ include "kafka.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.kafka.service.port }}
+   
+3. To connect to your Kafka cluster from outside the cluster:
+   kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "kafka.fullname" . }} {{ .Values.kafka.service.port }}:{{ .Values.kafka.service.port }}
+
+4. Create a topic:
+   kubectl exec -it {{ include "kafka.fullname" . }}-0 -- kafka-topics.sh --create --topic test --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+
+5. List topics:
+   kubectl exec -it {{ include "kafka.fullname" . }}-0 -- kafka-topics.sh --list --bootstrap-server localhost:9092
+
+{{- if .Values.kafka.kraft.enabled }}
+
+Note: This Kafka deployment is running in KRaft mode without ZooKeeper.
+{{- end }}

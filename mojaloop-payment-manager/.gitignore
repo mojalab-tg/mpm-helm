@@ -1,2 +1,4 @@
 requirements.lock
 mojaloop-payment-manager/requirements.lock
+values-dev.yaml
+values-prod.yaml

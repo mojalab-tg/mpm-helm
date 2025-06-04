@@ -9,16 +9,16 @@ imagePullCredentials: &imagePullCredentials
   user: "someusername"
   pass: "somepassword"
 
-experienceApiClientSecret: &experienceApiClientSecret "somesecret"
+experienceApiClientSecret: &experienceApiClientSecret "somesecret-changeme"
 
 # set both these to the external URL of the UI itself
-frontendRootUrl: &frontendRootUrl "http://portal.external.url:1234/"
-frontendBaseUrl: &frontendBaseUrl "http://experience-api.external.url:1234/"
+frontendRootUrl: &frontendRootUrl "http://portal.mpm.example.com/"
+frontendBaseUrl: &frontendBaseUrl "http://portal.mpm.example.com/"
 
 # this needs to have external URLs of both the UI and experience API
 frontendRedirectUris: &frontendRedirectUris
-  - "http://portal.external.url:1234/*"
-  - "http://experience-api.external.url/*"
+  - "http://portal.mpm.example.com/*"
+  - "http://portal.mpm.example.com/*"
 
 # this _should_ be set to only allow requests from known origins
 frontendWebOrigins: &frontendWebOrigins
@@ -26,12 +26,14 @@ frontendWebOrigins: &frontendWebOrigins
 
 # this should be set to the FSPID assigned by the mojaloop hub to this DFSP
 dfspId: &dfspId "pm4mldfsp"
+authClientId: &authClientId "dfsp-jwt"
+authClientSecret: &authClientSecret "dfsp-jwt-secret-from-hub-keycloak-please-changeme"
 
 # the test ingress exposes four internal endpoints used for test automation
 # on a single ingress. if this is enabled you must provide real values for the
 # service names below.
 testIngress:
-  enabled: true
+  enabled: false
   simBackendServiceName: "deployment-simulator-backend-service"
   coreConnectorServiceName: "deployment-core-connector-service"
   schemeAdapterServiceName: "deployment-scheme-adapter-service"
@@ -52,7 +54,11 @@ frontend:
   imagePullCredentials: *imagePullCredentials
   env:
     # this should be set to the external URL of the experience API
-    API_BASE_URL: "http://experience-api.external.url:30095"
+    API_BASE_URL: "https://portal.mpm.example.com/experience-api"
+    # For now enabling authentication is not working
+    ENABLE_AUTHENTICATION: false
+    TITLE: "Payment Manager"
+    COUNTRY_LOGO: "https://upload.wikimedia.org/wikipedia/commons/2/2d/Armoiries_du_Togo.svg"
   ingress:
     enabled: true
     annotations:
@@ -60,7 +66,7 @@ frontend:
       nginx.ingress.kubernetes.io/rewrite-target: /
       # kubernetes.io/ingress.class: nginxinternal
     hosts:
-      - host: pm4ml.frontend.local
+      - host: portal.mpm.example.com
         paths: ["/"]
 
 experience-api:
@@ -80,11 +86,11 @@ experience-api:
     # authClientSecretSecretKey: key
     # authClientSecretSecret: secretname
     # this should be set to the external URL of the auth endpoint on the experience API
-    authRedirectUri: "http://experience-api.external.url:1234/auth"
+    authRedirectUri: "http://portal.mpm.example.com/auth"
     authScopes: roles
     authResourceName: pm4ml-customer-ui
     # this should be set to the external URL of the UI
-    authLoggedInLandingUrl: "http://frontend.external.url:1234/"
+    authLoggedInLandingUrl: "http://portal.mpm.example.com/"
     authSessionSecure: false
     authSessionRedisUrl: "redis://redis-master/2"
   ingress:
@@ -93,39 +99,95 @@ experience-api:
       nginx.ingress.kubernetes.io/rewrite-target: /$2
       # kubernetes.io/ingress.class: nginxinternal
     hosts:
-      - host: pm4ml.api.local
+      - host: portal.mpm.example.com
         paths: ["/experience-api(/|$)(.*)"]
 
 management-api:
+  config:
+    tlsClientCSRParametersData: |-
+      {
+        "subject": {
+          "C": "US",
+          "L": "test",
+          "O": "test",
+          "OU": "test"
+        },
+        "extensions": {
+          "subjectAltName": {
+            "dns": [
+            ],
+            "ips": [
+            ]
+          }
+        }
+      }
+    tlsServerCSRParametersData: |-
+      {
+        "subject": {
+          "C": "US",
+          "L": "test",
+          "O": "test",
+          "OU": "test"
+        },
+        "extensions": {
+          "subjectAltName": {
+            "dns": [
+            ],
+            "ips": [
+            ]
+          }
+        }
+      }
+    caCSRParametersData: |-
+      {
+        "CN": "DFSPCA",
+        "E": "ca@test.com",
+        "O": "test",
+        "OU": "test",
+        "C": "US",
+        "ST": "test",
+        "L": "test"
+      }
+      
   imagePullCredentials: *imagePullCredentials
   env:
     #    CLIENT_SECRET_NAME: changeme
     #    CLIENT_SECRET_KEY: changeme
     CACHE_HOST: redis-master
     DFSP_ID: *dfspId
-    ENABLE_UI_API_SERVER: false
-    HUB_IAM_PROVIDER_URL: https://change.me
-    MCM_SERVER_ENDPOINT: http://mcm-server
+    ENABLE_UI_API_SERVER: true
+    HUB_IAM_PROVIDER_URL: https://keycloak.hub.example.com
+    MCM_SERVER_ENDPOINT: https://mcm.hub.example.com/pm4mlapi/
     MCM_CLIENT_REFRESH_INTERVAL: 300
     AUTH_ENABLED: true
-    AUTH_CLIENT_ID: change-me_oidc
-    AUTH_CLIENT_SECRET: change-me_oidc
-    VAULT_ENDPOINT: http://vault:8200
-    VAULT_AUTH_METHOD: K8S
+    AUTH_CLIENT_ID: *authClientId
+    AUTH_CLIENT_SECRET: *authClientSecret
+    VAULT_ENDPOINT: http://pm4ml-vault:8200
+    VAULT_AUTH_METHOD: APP_ROLE
     VAULT_K8S_ROLE: vault-pm4ml-auth
     VAULT_K8S_TOKEN_FILE: /var/run/secrets/kubernetes.io/serviceaccount/token
     VAULT_ROLE_ID_FILE: /vault/role-id
     VAULT_ROLE_SECRET_ID_FILE: /vault/secret-id
-    VAULT_PKI_BASE_DOMAIN: example.com
+    VAULT_PKI_BASE_DOMAIN: mpm.example.com
     VAULT_MOUNT_PKI: pki
     VAULT_MOUNT_KV: secrets
+    MOJALOOP_CONNECTOR_FQDN: pm4ml-mojaloop-core-connector
+    CALLBACK_URL: http://scheme-adapter:4000
+    WHITELIST_IP: "10.20.20.130"
+    VAULT_PKI_SERVER_ROLE: server-cert-role
+    VAULT_PKI_CLIENT_ROLE: client-cert-role
+    INBOUND_LISTEN_PORT: 9000
+    CONTROL_LISTEN_PORT: 4005
+    PRIVATE_KEY_ALGORITHM: rsa
+    PRIVATE_KEY_LENGTH: 4096
+    CERT_MANAGER_ENABLED: true
 
   ingress:
     enabled: true
     annotations:
       nginx.ingress.kubernetes.io/rewrite-target: /$2
     hosts:
-      - host: localhost
+      - host: portal.mpm.example.com
         paths: ["/management-api(/|$)(.*)"]
 
 mysql:
@@ -137,10 +199,24 @@ mysql:
     name: testdb
   master:
     persistence:
-      enabled: false
+      enabled: true
 
 vault:
-  enabled: false
+  enabled: true
+  unsealer:
+    enabled: true
+    domain: "mpm.example.com" # Used for PKI configuration
+  ingress:
+    enabled: true
+    hosts:
+      - host: vault.mpm.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+  #tls:
+  #  - secretName: vault-tls
+  #    hosts:
+  #      - vault.mpm.example.com
 
 redis:
   auth:
@@ -159,11 +235,11 @@ scheme-adapter:
     enabled: true
 
     ## Set this if you want to use the global override
-    kafka: {}
+    #kafka: {}
     ## Set this to override this specifically
-    # kafka:
-    #   host: kafka
-    #   port: 9092
+    kafka:
+      host: pm4ml-kafka
+      port: 9092
 
     ## Set this if you want to use the global override
     # redis: {}
@@ -176,12 +252,14 @@ scheme-adapter:
     config:
       simName: *dfspId
       ## SDKBULK: Enabled following param for bulk
-      bulkTransactionSupportEnabled: false
+      bulkTransactionSupportEnabled: true
       ## JWS configuration
       jwsSigningKey: ""
       jwsVerificationKeys: {}
 
     env:
+      API_TYPE: iso20022
+      ILP_VERSION: 4
       ## API-SVC general config
       # Port number that the inbound (Mojaloop API) HTTP server will listen on
       INBOUND_LISTEN_PORT: 4000
@@ -197,8 +275,8 @@ scheme-adapter:
 
       # Enable mutual TLS authentication. Useful when not running in a secure
       # environment, i.e. when you're running it locally against your own implementation.
-      INBOUND_MUTUAL_TLS_ENABLED: false
-      OUTBOUND_MUTUAL_TLS_ENABLED: false
+      INBOUND_MUTUAL_TLS_ENABLED: true
+      OUTBOUND_MUTUAL_TLS_ENABLED: true
 
       # Enable verification or incoming JWS signatures
       # Note that signatures will be required on incoming messages
@@ -234,7 +312,7 @@ scheme-adapter:
 
       # The number of space characters by which to indent pretty-printed logs. If set to zero, log events
       # will each be printed on a single line.
-      LOG_INDENT: 0
+      LOG_INDENT: 2
 
       # REDIS CACHE CONNECTION
       CACHE_URL: redis://{{ include "common.tplvalues.render" (dict "value" .Values.redis.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.redis.host "context" $)) }}:{{ .Values.redis.port | default .Values.global.redis.port }}/{{ .Values.redis.database | default .Values.global.redis.database }}
@@ -244,7 +322,7 @@ scheme-adapter:
       # SWITCH ENDPOINT
       # The option 'PEER_ENDPOINT' has no effect if the remaining options 'ALS_ENDPOINT', 'QUOTES_ENDPOINT',
       # 'BULK_QUOTES_ENDPOINT', 'TRANSFERS_ENDPOINT', 'BULK_TRANSFERS_ENDPOINT', 'TRANSACTION_REQUESTS_ENDPOINT' are specified.
-      PEER_ENDPOINT: mojaloop.hub.external.fspiop.endpoint:1234
+      PEER_ENDPOINT: extapi.hub.example.com
 
       ### Set each Mojaloop Switch endpoint service individually
       ALS_ENDPOINT: ""
@@ -315,9 +393,9 @@ scheme-adapter:
       WSO2_BEARER_TOKEN: 7718fa9b-be13-3fe7-87f0-a12cf1628168
 
       # OAuth2 data used to obtain WSO2 bearer token
-      OAUTH_TOKEN_ENDPOINT: test
-      OAUTH_CLIENT_KEY: test
-      OAUTH_CLIENT_SECRET: test
+      OAUTH_TOKEN_ENDPOINT: https://keycloak.hub.example.com/realms/dfsps/protocol/openid-connect/token
+      OAUTH_CLIENT_KEY: *authClientId
+      OAUTH_CLIENT_SECRET: *authClientSecret
       OAUTH_REFRESH_SECONDS: 3600
       # OAUTH_CLIENT_SECRET_KEY:
       # OAUTH_CLIENT_SECRET_NAME:
@@ -341,7 +419,7 @@ scheme-adapter:
 
       # Management API websocket connection settings.
       # The Management API uses this for exchanging connector management messages.
-      MGMT_API_WS_URL: 127.0.0.1
+      MGMT_API_WS_URL: pm4ml-management-api
       MGMT_API_WS_PORT: 4005
 
       # Set to true to enable the use of PM4ML-related services e.g MCM, Management API service
@@ -349,10 +427,10 @@ scheme-adapter:
       PM4ML_ENABLED: true
 
       # Set FX Provider to use, this is temporary configuration until services component is implemented. Enable this for FX.
-      # GET_SERVICES_FXP_RESPONSE: testfxp
+      GET_SERVICES_FXP_RESPONSE: testfxp
 
       # Supported Currencies by this DFSP. Enable this for FX.
-      # SUPPORTED_CURRENCIES: "USD"
+      SUPPORTED_CURRENCIES: "XOF"
 
       ## API-SVC kafka config
       BACKEND_EVENT_CONSUMER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
@@ -430,7 +508,7 @@ scheme-adapter:
     image:
       registry: docker.io
       repository: mojaloop/sdk-scheme-adapter
-      tag: v23.6.0-iso.8
+      tag: v24.6.3
       ## Specify a imagePullPolicy
       ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
       ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
@@ -617,7 +695,7 @@ scheme-adapter:
     ingress:
       ## @param ingress.enabled Enable ingress record generation for %%MAIN_CONTAINER_NAME%%
       ##
-      enabled: false
+      enabled: true
       ## @param ingress.pathType Ingress path type
       ##
       pathType: ImplementationSpecific
@@ -626,7 +704,7 @@ scheme-adapter:
       apiVersion:
       ## @param ingress.hostname Default host for the ingress record
       ##
-      hostname: sdk-scheme-adapter.local
+      hostname: sdk.mpm.example.com
       ## @param ingress.path Default path for the ingress record
       ## NOTE: You may need to set this to '/*' in order to use this with ALB ingress controllers
       ##
@@ -751,11 +829,11 @@ scheme-adapter:
     enabled: false
 
     ## Set this if you want to use the global override
-    kafka: {}
+    # kafka: {}
     ## Set this to override this specifically
-    # kafka:
-    #   host: kafka
-    #   port: 9092
+    kafka:
+      host: pm4ml-kafka
+      port: 9092
 
     ## Set this if you want to use the global override
     redis: {}
@@ -840,7 +918,7 @@ scheme-adapter:
     image:
       registry: docker.io
       repository: mojaloop/sdk-scheme-adapter
-      tag: v23.6.0-iso.8
+      tag: v24.6.3
       ## Specify a imagePullPolicy
       ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
       ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
@@ -1166,11 +1244,11 @@ scheme-adapter:
     enabled: false
 
     ## Set this if you want to use the global override
-    kafka: {}
+    #kafka: {}
     ## Set this to override this specifically
-    # kafka:
-    #   host: kafka
-    #   port: 9092
+    kafka:
+      host: pm4ml-kafka
+      port: 9092
 
     ## Set this if you want to use the global override
     redis: {}
@@ -1256,7 +1334,7 @@ scheme-adapter:
     image:
       registry: docker.io
       repository: mojaloop/sdk-scheme-adapter
-      tag: v23.6.0-iso.8
+      tag: v24.6.3
       ## Specify a imagePullPolicy
       ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
       ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
@@ -1677,6 +1755,31 @@ sim-backend:
   env:
     OUTBOUND_ENDPOINT: http://scheme-adapter:4001
     DFSP_ID: *dfspId
+  ingress:
+    enabled: true
+    host: sim.mpm.example.com
+    paths:
+      - path: /simapi
+        pathType: Prefix
+        portName: simapi
+      - path: /reportapi
+        pathType: Prefix
+        portName: reportapi
+      - path: /testapi
+        pathType: Prefix
+        portName: testapi
+
+sim-ui:
+  enabled: true
+  ingress:
+    enabled: true
+    hosts:
+      - host: sim.mpm.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+  env:
+    API_BASE_URL: http://sim.mpm.example.com/simapi
 
 ttk:
   enabled: false
@@ -1701,12 +1804,13 @@ ttk:
           "CALLBACK_ENDPOINT": "http://{{ $.Release.Name }}-scheme-adapter:4001",
           "SEND_CALLBACK_ENABLE": true,
           "DEFAULT_ENVIRONMENT_FILE_NAME": "pm4ml-default-environment.json",
-          "GITHUB_CONFIG": {
-            "TEST_CASES_REPO_OWNER": "mojaloop",
-            "TEST_CASES_REPO_NAME": "testing-toolkit-test-cases",
-            "TEST_CASES_REPO_DEFAULT_RELEASE_TAG": "latest",
-            "TEST_CASES_REPO_BASE_PATH": "collections/pm4ml"
-          },
+          "GITHUB_CONFIG":
+            {
+              "TEST_CASES_REPO_OWNER": "mojaloop",
+              "TEST_CASES_REPO_NAME": "testing-toolkit-test-cases",
+              "TEST_CASES_REPO_DEFAULT_RELEASE_TAG": "latest",
+              "TEST_CASES_REPO_BASE_PATH": "collections/pm4ml",
+            },
           "DEFAULT_REQUEST_TIMEOUT": 15000,
           "FSPID": *dfspId,
         }
@@ -1742,33 +1846,35 @@ ttk:
       api_definitions__mojaloop_connector_outbound_2.1__api_spec.yaml: "https://raw.githubusercontent.com/mojaloop/api-snippets/main/docs/sdk-scheme-adapter-outbound-v2_1_0-openapi3-snippets.yaml"
       api_definitions__mojaloop_connector_outbound_2.1__callback_map.json: []
     extraEnvironments:
-      pm4ml-default-environment.json: {
-        "inputValues": {
-          "ENABLE_WS_ASSERTIONS": true,
-          "WS_ASSERTION_TIMEOUT": 5000,
-          "RETRY_MAX_ATTEMPTS": 100,
-          "FROM_DISPLAY_NAME": "Display-Test",
-          "FROM_FIRST_NAME": "Firstname-Test",
-          "FROM_MIDDLE_NAME": "Middlename-Test",
-          "FROM_LAST_NAME": "Lastname-Test",
-          "FROM_DOB": "1984-01-01",
-          "FROM_FSP_ID": "testpayer",
-          "HOME_TRANSACTION_ID": "123ABC",
-          "NOTE": "test",
-          "P2P_AMOUNT": "10",
-          "P2P_CURRENCY": "EUR",
-          "P2P_SOURCE_PARTY_ID_1": "16665551001",
-          "P2P_DESTINATION_PARTY_ID_1": "16665551002",
-          "FX_SOURCE_PARTY_ID_1": "16665551001",
-          "FX_DESTINATION_PARTY_ID_1": "16665551002",
-          "FXP1_ID": "testfxp",
-          "FX_PAYERDFSP_ID": "testpayer",
-          "FX_PAYEEDFSP_ID": "testpayee",
-          "FX_SOURCE_CURRENCY": "EUR",
-          "FX_TARGET_CURRENCY": "XXX",
-          "FX_SOURCE_AMOUNT": "10"
+      pm4ml-default-environment.json:
+        {
+          "inputValues":
+            {
+              "ENABLE_WS_ASSERTIONS": true,
+              "WS_ASSERTION_TIMEOUT": 5000,
+              "RETRY_MAX_ATTEMPTS": 100,
+              "FROM_DISPLAY_NAME": "Display-Test",
+              "FROM_FIRST_NAME": "Firstname-Test",
+              "FROM_MIDDLE_NAME": "Middlename-Test",
+              "FROM_LAST_NAME": "Lastname-Test",
+              "FROM_DOB": "1984-01-01",
+              "FROM_FSP_ID": "testpayer",
+              "HOME_TRANSACTION_ID": "123ABC",
+              "NOTE": "test",
+              "P2P_AMOUNT": "10",
+              "P2P_CURRENCY": "XOF",
+              "P2P_SOURCE_PARTY_ID_1": "16665551001",
+              "P2P_DESTINATION_PARTY_ID_1": "16665551002",
+              "FX_SOURCE_PARTY_ID_1": "16665551001",
+              "FX_DESTINATION_PARTY_ID_1": "16665551002",
+              "FXP1_ID": "testfxp",
+              "FX_PAYERDFSP_ID": "testpayer",
+              "FX_PAYEEDFSP_ID": "testpayee",
+              "FX_SOURCE_CURRENCY": "XOF",
+              "FX_TARGET_CURRENCY": "XXX",
+              "FX_SOURCE_AMOUNT": "10",
+            },
         }
-      }
 
     ingress:
       enabled: true
@@ -1792,6 +1898,11 @@ ttk:
           host: pm4ml-testing-toolkit.local
     config:
       API_BASE_URL: http://pm4ml-testing-toolkit.local
+
+kafka:
+  enabled: true
+  storage:
+    size: 2Gi
 
 keycloak:
   enabled: true
@@ -4069,6 +4180,6 @@ keycloak:
           "clientSessionMaxLifespan": "0",
           "clientOfflineSessionIdleTimeout": "0"
         },
-        "keycloakVersion": "12.0.4",
+        "keycloakVersion": "10.3.0",
         "userManagedAccessAllowed": false
       }

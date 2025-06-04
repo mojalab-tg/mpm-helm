@@ -1,0 +1,14 @@
+{{- if and .Values.vault.enabled .Values.vault.podDisruptionBudget.enabled (gt (.Values.vault.replicaCount | int) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "vault.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.vault.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "vault.selectorLabels" . | nindent 6 }}
+{{- end }}

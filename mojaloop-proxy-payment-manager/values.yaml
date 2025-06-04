@@ -92,7 +92,6 @@ management-api-a:
   ingress:
     enabled: false
 
-
 management-api-b:
   enabled: true
   imagePullCredentials: *imagePullCredentials
@@ -117,7 +116,6 @@ management-api-b:
 
   ingress:
     enabled: false
-
 
 ttk:
   enabled: false

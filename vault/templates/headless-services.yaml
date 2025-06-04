@@ -1,0 +1,23 @@
+{{- if .Values.vault.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vault.fullname" . }}-headless
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+    service.type: headless
+spec:
+  clusterIP: None
+  ports:
+    - port: {{ .Values.vault.service.port }}
+      targetPort: {{ .Values.vault.service.targetPort }}
+      protocol: TCP
+      name: api
+    - port: 8201
+      targetPort: 8201
+      protocol: TCP
+      name: cluster-port
+  selector:
+    {{- include "vault.selectorLabels" . | nindent 4 }}
+{{- end }}
