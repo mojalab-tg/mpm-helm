@@ -117,8 +117,25 @@ kubectl logs <pod-name>
 ```
 
 ### Prepare domain names
-[pending edit]
+Create folowing domainnames on your internal and external DNS systems. Replace de domain name by one corresponding to your organisation domain name.
+  
+- portal.mpm.example.com : Web UI to acces your MPM
+  - Private DNS
+  - Microk8s Ingress IP
 
+- sdk.mpm.example.com : External endpoint to Mojaloop Hub
+  - Public DNS
+  - Public IP NATed or Proxyed to microk8s ingress IP
+
+- registry.mpm.example.com : Docker registry
+  - Private DNS
+  - Microk8s Ingress IP
+
+Also create folowing domain if you plan to use the backend simulator module instead of an integration to your actual CBS
+
+- sim.mpm.example.com : Web UI of Simulation Backend
+  - Private DNS
+  - Microk8s Ingress IP
 
 ### Edit MPM chart values
 ```bash
