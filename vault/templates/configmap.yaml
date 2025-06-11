@@ -145,8 +145,12 @@ data:
             echo "🎉 Vault configured successfully for MPM!"
           fi
         else
-          generate_secret_id
-          echo "✅ Vault already configured for MPM"
+          if [ -z "$VAULT_TOKEN" ]; then
+            echo "⚠️ Warning: No root token available, skipping post-unseal configuration"
+          else
+            generate_secret_id
+            echo "✅ Vault already configured for MPM"
+          fi
         fi
       elif [ $? -eq 2 ]; then
         echo "🔒 Vault is sealed, attempting to unseal..."

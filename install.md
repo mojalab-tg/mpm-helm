@@ -153,7 +153,11 @@ sudo helm dep up
 # Test deployment and fix evantual issues
 sudo helm install pm4ml . -f values-dev.yaml -n mpm --create-namespace --dry-run --debug
 
-# Install the chart if test deploy has no issue
+# Install the chart if test deploy has no issue. This assume release name is pm4ml and namespace is mpm
 sudo helm install pm4ml . -f values-dev.yaml -n mpm --create-namespace
+
+# Manualy init and unseal vault; run :
+## You can confirm vault is successfully initiated and unsealed by displaying the pod's logs
+sudo bash ../vault/init-vault.sh mpm pm4ml
 
 ```
