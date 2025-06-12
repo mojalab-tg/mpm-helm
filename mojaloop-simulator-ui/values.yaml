@@ -5,7 +5,8 @@ image:
 
 service:
   port: 6060
-  type: ClusterIP
+  nodePort: 30060
+  type: NodePort
 
 ingress:
   enabled: true

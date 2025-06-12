@@ -6,7 +6,8 @@ spec:
   type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
-      targetPort: 6060
+      targetPort: 8080
+      nodePort: {{ .Values.service.nodePort | default (30600) }}
       protocol: TCP
       name: http
   selector:

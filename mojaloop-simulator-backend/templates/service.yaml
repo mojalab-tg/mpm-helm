@@ -5,19 +5,19 @@ metadata:
   labels:
     {{- include "sim-backend.common-labels" $ | nindent 4 }}
 spec:
-   type: ClusterIP
-   ports:
-   - port: 3000
-     protocol: TCP
-     name: simapi
-     targetPort: simapi
-   - port: 3002
-     protocol: TCP
-     name: reportapi
-     targetPort: reportapi
-   - port: 3003
-     protocol: TCP
-     name: testapi
-     targetPort: testapi
-   selector:
-      {{- include "sim-backend.common-labels" $ | nindent 6 }}
+  type: NodePort
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30001
+    name: simapi
+  - port: 3002
+    targetPort: 3002
+    nodePort: 30021
+    name: reportapi
+  - port: 3003
+    targetPort: 3003
+    nodePort: 30031
+    name: testapi
+  selector:
+    {{- include "sim-backend.common-labels" $ | nindent 6 }}

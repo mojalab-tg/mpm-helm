@@ -9,25 +9,25 @@ imagePullCredentials: &imagePullCredentials
   user: "someusername"
   pass: "somepassword"
 
-experienceApiClientSecret: &experienceApiClientSecret "somesecret-changeme"
+experienceApiClientSecret: &experienceApiClientSecret "ansomesecret4mojalabmoovpm4ml"
 
 # set both these to the external URL of the UI itself
-frontendRootUrl: &frontendRootUrl "http://portal.mpm.example.com/"
-frontendBaseUrl: &frontendBaseUrl "http://portal.mpm.example.com/"
+frontendRootUrl: &frontendRootUrl "http://moov-portal.mojalab.gouv.tg/"
+frontendBaseUrl: &frontendBaseUrl "http://moov-portal.mojalab.gouv.tg/"
 
 # this needs to have external URLs of both the UI and experience API
 frontendRedirectUris: &frontendRedirectUris
-  - "http://portal.mpm.example.com/*"
-  - "http://portal.mpm.example.com/*"
+  - "http://moov-portal.mojalab.gouv.tg/*"
+  - "http://moov-portal.mojalab.gouv.tg/*"
 
 # this _should_ be set to only allow requests from known origins
 frontendWebOrigins: &frontendWebOrigins
   - "*"
 
 # this should be set to the FSPID assigned by the mojaloop hub to this DFSP
-dfspId: &dfspId "pm4mldfsp"
+dfspId: &dfspId "flooz"
 authClientId: &authClientId "dfsp-jwt"
-authClientSecret: &authClientSecret "dfsp-jwt-secret-from-hub-keycloak-please-changeme"
+authClientSecret: &authClientSecret "xSqt1nKri4vutE6pHDisNZ7rJpIJQmoG"
 
 # the test ingress exposes four internal endpoints used for test automation
 # on a single ingress. if this is enabled you must provide real values for the
@@ -54,7 +54,7 @@ frontend:
   imagePullCredentials: *imagePullCredentials
   env:
     # this should be set to the external URL of the experience API
-    API_BASE_URL: "https://portal.mpm.example.com/experience-api"
+    API_BASE_URL: "https://moov-portal.mojalab.gouv.tg/experience-api"
     # For now enabling authentication is not working
     ENABLE_AUTHENTICATION: false
     TITLE: "Payment Manager"
@@ -66,7 +66,7 @@ frontend:
       nginx.ingress.kubernetes.io/rewrite-target: /
       # kubernetes.io/ingress.class: nginxinternal
     hosts:
-      - host: portal.mpm.example.com
+      - host: moov-portal.mojalab.gouv.tg
         paths: ["/"]
 
 experience-api:
@@ -86,11 +86,11 @@ experience-api:
     # authClientSecretSecretKey: key
     # authClientSecretSecret: secretname
     # this should be set to the external URL of the auth endpoint on the experience API
-    authRedirectUri: "http://portal.mpm.example.com/auth"
+    authRedirectUri: "http://moov-portal.mojalab.gouv.tg/auth"
     authScopes: roles
     authResourceName: pm4ml-customer-ui
     # this should be set to the external URL of the UI
-    authLoggedInLandingUrl: "http://portal.mpm.example.com/"
+    authLoggedInLandingUrl: "http://moov-portal.mojalab.gouv.tg/"
     authSessionSecure: false
     authSessionRedisUrl: "redis://redis-master/2"
   ingress:
@@ -99,7 +99,7 @@ experience-api:
       nginx.ingress.kubernetes.io/rewrite-target: /$2
       # kubernetes.io/ingress.class: nginxinternal
     hosts:
-      - host: portal.mpm.example.com
+      - host: moov-portal.mojalab.gouv.tg
         paths: ["/experience-api(/|$)(.*)"]
 
 management-api:
@@ -107,10 +107,12 @@ management-api:
     tlsClientCSRParametersData: |-
       {
         "subject": {
-          "C": "US",
-          "L": "test",
-          "O": "test",
-          "OU": "test"
+          "C": "TG",
+          "L": "Lomé",
+          "O": "Moov",
+          "OU": "MoovMoney",
+          "CN": "moov",
+          "E": "money@moov.gouv.tg"
         },
         "extensions": {
           "subjectAltName": {
@@ -124,10 +126,12 @@ management-api:
     tlsServerCSRParametersData: |-
       {
         "subject": {
-          "C": "US",
-          "L": "test",
-          "O": "test",
-          "OU": "test"
+          "C": "TG",
+          "L": "Lomé",
+          "O": "Moov",
+          "OU": "MoovMoney",
+          "CN": "Hub",
+          "E": "hub@mojahub.goug.tg"
         },
         "extensions": {
           "subjectAltName": {
@@ -140,15 +144,14 @@ management-api:
       }
     caCSRParametersData: |-
       {
-        "CN": "DFSPCA",
+        "CN": "flooz",
         "E": "ca@test.com",
-        "O": "test",
-        "OU": "test",
-        "C": "US",
+        "O": "Moov",
+        "OU": "MoovMoney",
+        "C": "TG",
         "ST": "test",
-        "L": "test"
+        "L": "Lomé"
       }
-      
   imagePullCredentials: *imagePullCredentials
   env:
     #    CLIENT_SECRET_NAME: changeme
@@ -156,8 +159,8 @@ management-api:
     CACHE_HOST: redis-master
     DFSP_ID: *dfspId
     ENABLE_UI_API_SERVER: true
-    HUB_IAM_PROVIDER_URL: https://keycloak.hub.example.com
-    MCM_SERVER_ENDPOINT: https://mcm.hub.example.com/pm4mlapi/
+    HUB_IAM_PROVIDER_URL: https://keycloak.mojahub.gouv.tg
+    MCM_SERVER_ENDPOINT: https://mcm.mojahub.gouv.tg/pm4mlapi/
     MCM_CLIENT_REFRESH_INTERVAL: 300
     AUTH_ENABLED: true
     AUTH_CLIENT_ID: *authClientId
@@ -168,7 +171,7 @@ management-api:
     VAULT_K8S_TOKEN_FILE: /var/run/secrets/kubernetes.io/serviceaccount/token
     VAULT_ROLE_ID_FILE: /vault/role-id
     VAULT_ROLE_SECRET_ID_FILE: /vault/secret-id
-    VAULT_PKI_BASE_DOMAIN: mpm.example.com
+    VAULT_PKI_BASE_DOMAIN: mojalab.gouv.tg
     VAULT_MOUNT_PKI: pki
     VAULT_MOUNT_KV: secrets
     MOJALOOP_CONNECTOR_FQDN: pm4ml-mojaloop-core-connector
@@ -187,7 +190,7 @@ management-api:
     annotations:
       nginx.ingress.kubernetes.io/rewrite-target: /$2
     hosts:
-      - host: portal.mpm.example.com
+      - host: moov-portal.mojalab.gouv.tg
         paths: ["/management-api(/|$)(.*)"]
 
 mysql:
@@ -205,18 +208,18 @@ vault:
   enabled: true
   unsealer:
     enabled: true
-    domain: "mpm.example.com" # Used for PKI configuration
+    domain: "mojalab.gouv.tg" # Used for PKI configuration
   ingress:
     enabled: true
     hosts:
-      - host: vault.mpm.example.com
+      - host: moov-vault.mojalab.gouv.tg
         paths:
           - path: /
             pathType: Prefix
   #tls:
   #  - secretName: vault-tls
   #    hosts:
-  #      - vault.mpm.example.com
+  #      - moov-vault.mojalab.gouv.tg
 
 redis:
   auth:
@@ -322,7 +325,7 @@ scheme-adapter:
       # SWITCH ENDPOINT
       # The option 'PEER_ENDPOINT' has no effect if the remaining options 'ALS_ENDPOINT', 'QUOTES_ENDPOINT',
       # 'BULK_QUOTES_ENDPOINT', 'TRANSFERS_ENDPOINT', 'BULK_TRANSFERS_ENDPOINT', 'TRANSACTION_REQUESTS_ENDPOINT' are specified.
-      PEER_ENDPOINT: extapi.hub.example.com
+      PEER_ENDPOINT: extapi.mojahub.gouv.tg
 
       ### Set each Mojaloop Switch endpoint service individually
       ALS_ENDPOINT: ""
@@ -393,7 +396,7 @@ scheme-adapter:
       WSO2_BEARER_TOKEN: 7718fa9b-be13-3fe7-87f0-a12cf1628168
 
       # OAuth2 data used to obtain WSO2 bearer token
-      OAUTH_TOKEN_ENDPOINT: https://keycloak.hub.example.com/realms/dfsps/protocol/openid-connect/token
+      OAUTH_TOKEN_ENDPOINT: https://keycloak.mojahub.gouv.tg/realms/dfsps/protocol/openid-connect/token
       OAUTH_CLIENT_KEY: *authClientId
       OAUTH_CLIENT_SECRET: *authClientSecret
       OAUTH_REFRESH_SECONDS: 3600
@@ -704,7 +707,7 @@ scheme-adapter:
       apiVersion:
       ## @param ingress.hostname Default host for the ingress record
       ##
-      hostname: sdk.mpm.example.com
+      hostname: moov-sdk.mojalab.gouv.tg
       ## @param ingress.path Default path for the ingress record
       ## NOTE: You may need to set this to '/*' in order to use this with ALB ingress controllers
       ##
@@ -1113,7 +1116,7 @@ scheme-adapter:
       apiVersion:
       ## @param ingress.hostname Default host for the ingress record
       ##
-      hostname: sdk-scheme-adapter.local
+      hostname: moov-mpm.mojalab.gouv.tg
       ## @param ingress.path Default path for the ingress record
       ## NOTE: You may need to set this to '/*' in order to use this with ALB ingress controllers
       ##
@@ -1529,7 +1532,7 @@ scheme-adapter:
       apiVersion:
       ## @param ingress.hostname Default host for the ingress record
       ##
-      hostname: sdk-scheme-adapter.local
+      hostname: moov-mpm.mojalab.gouv.tg
       ## @param ingress.path Default path for the ingress record
       ## NOTE: You may need to set this to '/*' in order to use this with ALB ingress controllers
       ##
@@ -1757,7 +1760,7 @@ sim-backend:
     DFSP_ID: *dfspId
   ingress:
     enabled: true
-    host: sim.mpm.example.com
+    host: moov-sim.mojalab.gouv.tg
     paths:
       - path: /simapi
         pathType: Prefix
@@ -1774,12 +1777,12 @@ sim-ui:
   ingress:
     enabled: true
     hosts:
-      - host: sim.mpm.example.com
+      - host: moov-sim.mojalab.gouv.tg
         paths:
           - path: /
             pathType: Prefix
   env:
-    API_BASE_URL: http://sim.mpm.example.com/simapi
+    API_BASE_URL: http://moov-sim.mojalab.gouv.tg/simapi
 
 ttk:
   enabled: false
