@@ -1,0 +1,275 @@
+version: '3.7'
+#
+#  Component arrangement is as below:
+#
+#  ┌────────────┐    ┌────────────┐   ┌─────────────┐    ┌──────────┐
+#  │            │    │            │   │             │    │          │
+#  │  MCM API / ├───►│ Management ├──►│  SDK Scheme ├───►│   Hub    │
+#  │  Keycloak  │    │    API     │   │   Adapter   │    │ endpoints│
+#  │   (Hub)    │◄───┤(mcm-client)│◄──┤             │◄───┤ (or TTK) │
+#  └────────────┘    └────────────┘   └───┬────▲────┘    └──────────┘
+#                                         │    │
+#                                    ┌────▼────┴─────┐
+#                                    │Core Connector/│
+#                                    │  Sim Backend  │
+#                                    │    (TTK)      │
+#                                    └───────────────┘
+
+services:
+
+  frontend:
+    image: pm4ml/mojaloop-payment-manager-ui:1.17.6
+    environment:
+      - API_BASE_URL=http://localhost:4010
+    ports:
+      - "8081:8080"
+    depends_on:
+      - experience-api
+    profiles:
+      - portal
+
+  keycloak:
+   image: quay.io/keycloak/keycloak:12.0.4
+   environment:
+     - KEYCLOAK_USER=admin
+     - KEYCLOAK_PASSWORD=admin
+     - KEYCLOAK_FRONTEND_URL=http://localhost:8080/auth
+     - KEYCLOAK_IMPORT=/tmp/pm4ml-realm.json
+     - DB_VENDOR=h2
+   volumes:
+     - ./keycloak-realm.json:/tmp/pm4ml-realm.json
+   ports:
+     - "8080:8080"
+   profiles:
+     - portal
+
+  experience-api:
+    image: pm4ml/mojaloop-payment-manager-experience-api:3.1.1
+    ports:
+      - "4010:3000"
+    environment:
+      - APP_KEYS={{ CHANGE BEFORE INSTALL e.g. ootu1yoo5geeS7izai4ox1Yae1Eey6ai}}
+      - AUTH_CLIENT_ID=pm4ml-customer-ui
+      - AUTH_CLIENT_SECRET=a857e3d7-ebd4-4451-aabd-bcb480dde1a3
+      - AUTH_DISCOVERY_ENDPOINT=http://keycloak:8080/auth/realms/pm4ml/.well-known/openid-configuration
+      - AUTH_LOGGED_IN_LANDING_URL=http://localhost:8081/
+      - AUTH_REDIRECT_NAME=pm4ml-customer-ui
+      - AUTH_REDIRECT_URI=http://localhost:4010/auth
+      - AUTH_RESOURCE_NAME=pm4ml-customer-ui
+      - AUTH_SCOPES=roles
+      - DFSP_ID=test
+      - ENV_ID=1
+      - MANAGEMENT_ENDPOINT=management-api:9000
+      - METRICS_ENDPOINT=prometheus:9090
+      - MOCK_DATA=false
+      - SESSION_REDIS_URL=redis://redis/2
+      - SESSION_SECURE=false
+      - ENABLE_AUTH_CLIENT=true
+      - CACHE_SYNC_INTERVAL_SECONDS=30
+      - CACHE_REDIS_URL=redis://redis:6379/0
+      - ENABLE_CORS=TRUE
+    depends_on:
+      - management-api
+      - redis
+#      - keycloak
+    profiles:
+      - portal
+
+  management-api:
+    image: pm4ml/mojaloop-payment-manager-management-api:6.1.1
+    environment:
+      - AUTH_ENABLED=true
+      - CACHE_SYNC_INTERVAL_SECONDS=30
+      - CACHE_URL=redis://redis:6379
+      - CONTROL_LISTEN_PORT=4005
+      - CA_CSR_PARAMETERS=/resources/caCSRParameters.json
+      - DFSP_CLIENT_CSR_PARAMETERS=/resources/tlsClientCSRParameters.json
+      - DFSP_SERVER_CSR_PARAMETERS=/resources/tlsServerCSRParameters.json
+      - PRIVATE_KEY_ALGORITHM=rsa
+      - PRIVATE_KEY_LENGTH=4096
+      - VAULT_ENDPOINT=http://vault:8233
+      - VAULT_AUTH_METHOD=APP_ROLE
+      - VAULT_ROLE_ID_FILE=/vault/role-id
+      - VAULT_ROLE_SECRET_ID_FILE=/vault/secret-id
+      - VAULT_PKI_CLIENT_ROLE=client-cert-role
+      - VAULT_PKI_SERVER_ROLE=server-cert-role
+      - VAULT_MOUNT_PKI=pki
+      - VAULT_MOUNT_KV=secrets
+      - CERT_MANAGER_ENABLED=false
+    env_file: ./.env
+    volumes:
+      - ./vault/tmp:/vault
+      - ./resources:/resources
+    ports:
+      - "9000:9000"
+      - "9050:9050"
+    depends_on:
+      redis:
+        condition: service_started
+#      keycloak:
+#        condition: service_started
+      init-vault:
+        condition: service_completed_successfully
+
+  prometheus:
+    image: prom/prometheus:v2.21.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    profiles:
+      - portal
+
+  sim-backend:
+    image: mojaloop/ml-testing-toolkit:v18.5.1
+    volumes:
+      - "../testing-toolkit/docker-compose/as-a-backend/spec_files:/opt/app/spec_files"
+    ports:
+      - "5052:4040"
+      - "5051:5050"
+    command:
+      - sh
+      - -c
+      - "npm start"
+
+  # NOTE: The following UI for sim backend can be enabled for debugging purpose
+  sim-backend-ui:
+    image: mojaloop/ml-testing-toolkit-ui:v16.0.4
+    ports:
+      - "6061:6060"
+    environment:
+      - API_BASE_URL=http://localhost:5051
+      - AUTH_ENABLED=FALSE
+    command:
+      - sh
+      - /usr/share/nginx/start.sh
+
+  redis:
+    image: bitnami/redis:7.0.8-debian-11-r0
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_PORT=6379
+      - REDIS_REPLICATION_MODE=master
+      - REDIS_TLS_ENABLED=no
+    ports:
+      - "6379:6379"
+
+  sdk-scheme-adapter:
+    image: mojaloop/sdk-scheme-adapter:v23.6.0-iso.16
+    command:
+      - sh
+      - -c
+      - "yarn start:api-svc"
+    environment:
+      - API_TYPE=iso20022
+      - ILP_VERSION=4
+      - AUTO_ACCEPT_PARTY=false
+      - AUTO_ACCEPT_QUOTES=false
+      - AUTO_ACCEPT_R2P_PARTY=false
+      - BACKEND_ENDPOINT=sim-backend:4040
+      - CACHE_URL=redis://redis:6379
+      - ENABLE_OAUTH_TOKEN_ENDPOINT=false
+      - ENABLE_BACKEND_EVENT_HANDLER=false
+      - ENABLE_FSPIOP_EVENT_HANDLER=false
+      - ENABLE_TEST_FEATURES=true
+      - INBOUND_LISTEN_PORT=4000
+      - INBOUND_MUTUAL_TLS_ENABLED=false
+      - IN_CA_CERT_PATH=/secrets/inbound-cacert.pem
+      - IN_SERVER_CERT_PATH=/secrets/inbound-cert.pem
+      - IN_SERVER_KEY_PATH=/secrets/inbound-key.pem
+      - JWS_SIGN=true
+      - JWS_SIGNING_KEY_PATH=/jwsSigningKey.key
+      - JWS_VERIFICATION_KEYS_DIRECTORY=/jwsVerificationKeys
+      - METRICS_SERVER_LISTEN_PORT=4004
+      - MULTIPLE_PARTIES_RESPONSE=false
+      - MGMT_API_WS_URL=management-api
+      - MGMT_API_WS_PORT=4005
+      - OUTBOUND_LISTEN_PORT=4001
+      - OUTBOUND_MUTUAL_TLS_ENABLED=false
+      # hub endpoints
+      - PEER_ENDPOINT=extapi.mojahub.gouv.tg
+      # - ALS_ENDPOINT=mojaloop-testing-toolkit:4040
+      # - FX_QUOTES_ENDPOINT=mojaloop-testing-toolkit:4040
+      # - FX_TRANSFERS_ENPOINT=mojaloop-testing-toolkit:4040
+      - TEST_LISTEN_PORT=4002
+      - VALIDATE_INBOUND_JWS=false
+      - RESERVE_NOTIFICATION=false
+      - RESOURCE_VERSIONS=transfers=2.0,quotes=2.0,participants=2.0,parties=2.0,transactionRequests=1.1
+      - FSPIOP_API_SERVER_MAX_REQUEST_BYTES=209715200
+      - BACKEND_API_SERVER_MAX_REQUEST_BYTES=209715200
+    env_file: ./.env
+    ports:
+      - "4000:4000"
+      - "4001:4001"
+    volumes:
+      - ./inbound-cacert.pem:/secrets/inbound-cacert.pem
+      - ./inbound-cert.pem:/secrets/inbound-cert.pem
+      - ./inbound-key.pem:/secrets/inbound-key.pem
+      - ./secrets/jwsSigningKey.key:/jwsSigningKey.key
+      - ./secrets/jwsVerificationKeys:/jwsVerificationKeys
+    restart: always
+    depends_on:
+      management-api:
+        condition: service_started
+      redis:
+        condition: service_started
+
+  mojaloop-testing-toolkit:
+    image: mojaloop/ml-testing-toolkit:v18.5.1
+    user: root
+    volumes:
+      - "../testing-toolkit/docker-compose/as-a-switch/spec_files:/opt/app/spec_files"
+    ports:
+      - "4040:4040"
+      - "5050:5050"
+    command:
+      - sh
+      - -c
+      - "npm start"
+
+  mojaloop-testing-toolkit-ui:
+    image: mojaloop/ml-testing-toolkit-ui:v16.0.4
+    ports:
+      - "6060:6060"
+    environment:
+      - API_BASE_URL=http://localhost:5050
+      - AUTH_ENABLED=FALSE
+    command:
+      - sh
+      - /usr/share/nginx/start.sh
+
+  vault:
+    image: &VAULT_IMAGE vault:1.4.2
+    container_name: vault
+    volumes:
+      - ./vault/tmp:/vault/tmp
+      - ./vault/config.hcl:/vault/config/config.hcl
+      - vault-data:/vault/file/
+    environment:
+      - VAULT_ADDR=http://localhost:8233
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8233:8233"
+    command: server
+    restart: unless-stopped
+
+  init-vault:
+    image: *VAULT_IMAGE
+    container_name: init-vault
+    environment:
+      - VAULT_ADDR=http://vault:8233
+      - MY_VAULT_TOKEN=myroot
+    volumes:
+      - ./vault/tmp:/vault/tmp
+      - ./vault/vault-init.sh:/usr/local/bin/vault-init.sh
+      - ./vault/vault-root-token:/vault/file/vault-root-token
+      - vault-data:/vault/file/
+    command: /usr/local/bin/vault-init.sh
+    restart: on-failure
+    depends_on:
+      - vault
+networks:
+  default:
+    name: pm4ml-net
+
+volumes:
+  vault-data:

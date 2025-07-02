@@ -1,0 +1,53 @@
+{{- if and .Values.enabled .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "vault.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+rules:
+  # Permissions for auto-init and auto-unseal functionality
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch"]
+    resourceNames: ["{{ include "vault.fullname" . }}-keys"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  # Permissions for service discovery in HA mode
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Permissions for StatefulSet management
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
+  # Additional permissions for health checks and monitoring
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+    resourceNames: ["{{ include "vault.fullname" . }}-config"]
+  # Additional permissions for unsealer to check secrets across namespace
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "vault.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "vault.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vault.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

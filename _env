@@ -1,0 +1,16 @@
+## common
+DFSP_ID=test
+
+## management-api
+AUTH_CLIENT_ID=dfsp-jwt
+AUTH_CLIENT_SECRET=SXSO0QvHB2w4IsfX0PQatISFqoegdinI
+CALLBACK_URL=sdk-scheme-adapter:4000 # SDK endpoint
+HUB_IAM_PROVIDER_URL=https://keycloak.mojahub.gouv.tg
+MCM_SERVER_ENDPOINT=https://mcm.mojahub.gouv.tg/pm4mlapi
+WHITELIST_IP=192.168.5.97
+
+## sdk-scheme-adapter
+API_TYPE=iso20022
+GET_SERVICES_FXP_RESPONSE= # e.g, test-fxp
+PM4ML_ENABLED=true
+SUPPORTED_CURRENCIES=XOF

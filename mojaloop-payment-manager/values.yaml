@@ -1,0 +1,4393 @@
+# Default values for mojaloop-payment-manager.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# common/shared values
+
+imagePullCredentials: &imagePullCredentials
+  registry: "modusbox-mbx-docker.jfrog.io/modusintegration/"
+  user: "someusername"
+  pass: "somepassword"
+
+experienceApiClientSecret: &experienceApiClientSecret "ansomesecret4mojalabdfsppm4ml"
+
+# set both these to the external URL of the UI itself
+frontendRootUrl: &frontendRootUrl "http://portal.example.com/"
+frontendBaseUrl: &frontendBaseUrl "http://portal.example.com/"
+
+# this needs to have external URLs of both the UI and experience API
+frontendRedirectUris: &frontendRedirectUris
+  - "http://portal.example.com/*"
+  - "http://portal.example.com/*"
+
+# this _should_ be set to only allow requests from known origins
+frontendWebOrigins: &frontendWebOrigins
+  - "*"
+
+# this should be set to the FSPID assigned by the mojaloop hub to this DFSP
+dfspId: &dfspId "dfspId"
+authClientId: &authClientId "dfsp-jwt"
+authClientSecret: &authClientSecret "token"
+
+# the test ingress exposes four internal endpoints used for test automation
+# on a single ingress. if this is enabled you must provide real values for the
+# service names below.
+testIngress:
+  enabled: false
+  simBackendServiceName: "deployment-simulator-backend-service"
+  coreConnectorServiceName: "deployment-core-connector-service"
+  schemeAdapterServiceName: "deployment-scheme-adapter-service"
+  mgmtApiServiceName: "deployment-pm4ml-management-api-service"
+
+  hosts:
+    - host: pm4ml.test
+
+ingress:
+  enabled: true
+  hosts:
+    - host: pm4ml.local
+      paths:
+        - "/management-api(/|$)(.*)"
+# values for sub components
+
+frontend:
+  imagePullCredentials: *imagePullCredentials
+  env:
+    # this should be set to the external URL of the experience API
+    API_BASE_URL: "https://portal.example.com/experience-api"
+    # For now enabling authentication is not working
+    ENABLE_AUTHENTICATION: false
+    TITLE: "Payment Manager"
+    COUNTRY_LOGO: "https://upload.wikimedia.org/wikipedia/commons/2/2d/Armoiries_du_Togo.svg"
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: "nginx"
+      nginx.ingress.kubernetes.io/rewrite-target: /
+      # kubernetes.io/ingress.class: nginxinternal
+    hosts:
+      - host: portal.example.com
+        paths: ["/"]
+
+experience-api:
+  imagePullCredentials: *imagePullCredentials
+  env:
+    dfspId: *dfspId
+    appKeys: some-secret-please-change
+    managementEndPoint: pm4ml-management-api
+    metricsEndPoint: pm4ml-prometheus-server
+    # this should be set to the internal URL of the keycloak pm4ml realm discovery endpoint
+    # note that the hostname will be the deployment name followed by "-keycloak-http"
+    # e.g. the example below works when the deployment name is "pm4ml".
+    # HELM does not give us a nice way of getting the deployment name in the values file :(
+    authDiscoveryEndpoint: "http://pm4ml-keycloak-http:80/auth/realms/pm4ml/.well-known/openid-configuration"
+    authClientId: pm4ml-customer-ui
+    authClientSecret: *experienceApiClientSecret
+    # authClientSecretSecretKey: key
+    # authClientSecretSecret: secretname
+    # this should be set to the external URL of the auth endpoint on the experience API
+    authRedirectUri: "http://portal.example.com/auth"
+    authScopes: roles
+    authResourceName: pm4ml-customer-ui
+    # this should be set to the external URL of the UI
+    authLoggedInLandingUrl: "http://portal.example.com/"
+    authSessionSecure: false
+    authSessionRedisUrl: "redis://redis-master/2"
+  ingress:
+    enabled: true
+    annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /$2
+      kubernetes.io/ingress.class: nginx
+    hosts:
+      - host: portal.example.com
+        paths: ["/experience-api(/|$)(.*)"]
+
+management-api:
+  config:
+    tlsClientCSRParametersData: |-
+      {
+        "subject": {
+          "C": "TG",
+          "L": "Lomé",
+          "O": "dfsp",
+          "OU": "dfspMoney",
+          "CN": "dfsp",
+          "E": "money@dfsp.example.com"
+        },
+        "extensions": {
+          "subjectAltName": {
+            "dns": [
+            ],
+            "ips": [
+            ]
+          }
+        }
+      }
+    tlsServerCSRParametersData: |-
+      {
+        "subject": {
+          "C": "TG",
+          "L": "Lomé",
+          "O": "dfsp",
+          "OU": "dfspMoney",
+          "CN": "Hub",
+          "E": "hub@mojahub.goug.tg"
+        },
+        "extensions": {
+          "subjectAltName": {
+            "dns": [
+            ],
+            "ips": [
+            ]
+          }
+        }
+      }
+    caCSRParametersData: |-
+      {
+        "CN": "flooz",
+        "E": "ca@test.com",
+        "O": "dfsp",
+        "OU": "dfspMoney",
+        "C": "TG",
+        "ST": "test",
+        "L": "Lomé"
+      }
+  imagePullCredentials: *imagePullCredentials
+  env:
+    #    CLIENT_SECRET_NAME: changeme
+    #    CLIENT_SECRET_KEY: changeme
+    CACHE_HOST: redis-master
+    DFSP_ID: *dfspId
+    ENABLE_UI_API_SERVER: true
+    HUB_IAM_PROVIDER_URL: https://keycloak.mojahub.example.com
+    MCM_SERVER_ENDPOINT: https://mcm.mojahub.example.com/pm4mlapi/
+    MCM_CLIENT_REFRESH_INTERVAL: 300
+    AUTH_ENABLED: true
+    AUTH_CLIENT_ID: *authClientId
+    AUTH_CLIENT_SECRET: *authClientSecret
+    VAULT_ENDPOINT: http://pm4ml-vault:8200
+    VAULT_AUTH_METHOD: APP_ROLE
+    VAULT_K8S_ROLE: vault-pm4ml-auth
+    VAULT_K8S_TOKEN_FILE: /var/run/secrets/kubernetes.io/serviceaccount/token
+    VAULT_ROLE_ID_FILE: /vault/role-id
+    VAULT_ROLE_SECRET_ID_FILE: /vault/secret-id
+    VAULT_PKI_BASE_DOMAIN: mojalab.example.com
+    VAULT_MOUNT_PKI: pki
+    VAULT_MOUNT_KV: secrets
+    MOJALOOP_CONNECTOR_FQDN: connector.fsp.example.com
+    CALLBACK_URL: http://scheme-adapter:4000
+    WHITELIST_IP: "10.20.20.130"
+    VAULT_PKI_SERVER_ROLE: server-cert-role
+    VAULT_PKI_CLIENT_ROLE: client-cert-role
+    INBOUND_LISTEN_PORT: 9000
+    CONTROL_LISTEN_PORT: 4005
+    PRIVATE_KEY_ALGORITHM: rsa
+    PRIVATE_KEY_LENGTH: 4096
+    CERT_MANAGER_ENABLED: false
+
+  ingress:
+    enabled: true
+    annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /$2
+    hosts:
+      - host: portal.example.com
+        paths: ["/management-api(/|$)(.*)"]
+
+mysql:
+  replication:
+    enabled: false
+  db:
+    user: test
+    password: test123
+    name: testdb
+  master:
+    persistence:
+      enabled: true
+
+vault:
+  enabled: true
+  unsealer:
+    enabled: true
+    domain: "dfsp-sdk.mojalab.example.com" # Used for PKI configuration
+  ingress:
+    enabled: true
+    className: "nginx"
+    hosts:
+      - host: dfsp-vault.mojalab.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+#tls:
+#  - secretName: vault-tls
+#    hosts:
+#      - dfsp-vault.mojalab.example.com
+
+redis:
+  auth:
+    enabled: false
+    sentinel: false
+  nameOverride: redis
+  fullnameOverride: redis
+  cluster:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+
+scheme-adapter:
+  sdk-scheme-adapter-api-svc:
+    enabled: true
+
+    ## Set this if you want to use the global override
+    #kafka: {}
+    ## Set this to override this specifically
+    kafka:
+      host: pm4ml-kafka
+      port: 9092
+
+    ## Set this if you want to use the global override
+    # redis: {}
+    ## Set this to override this specifically
+    redis:
+      host: redis-master
+      port: 6379
+    #   database: 0 # This is a number between 0 to 15
+
+    config:
+      simName: *dfspId
+      ## SDKBULK: Enabled following param for bulk
+      bulkTransactionSupportEnabled: true
+      ## JWS configuration
+      jwsSigningKey: ""
+      jwsVerificationKeys: {}
+
+    env:
+      ## iso20022 vs fspiop
+      API_TYPE: fspiop
+      ILP_VERSION: 4
+      ## API-SVC general config
+      # Port number that the inbound (Mojaloop API) HTTP server will listen on
+      INBOUND_LISTEN_PORT: 4000
+
+      # Port number that the outbound (simplified DFSP outbound API) HTTP server will listen on
+      OUTBOUND_LISTEN_PORT: 4001
+
+      TEST_LISTEN_PORT: 4002
+
+      METRICS_SERVER_LISTEN_PORT: 4004
+
+      MULTIPLE_PARTIES_RESPONSE: false
+
+      # Enable mutual TLS authentication. Useful when not running in a secure
+      # environment, i.e. when you're running it locally against your own implementation.
+      INBOUND_MUTUAL_TLS_ENABLED: true
+      OUTBOUND_MUTUAL_TLS_ENABLED: true
+
+      # Enable verification or incoming JWS signatures
+      # Note that signatures will be required on incoming messages
+      # and will be validated against a public key.
+      VALIDATE_INBOUND_JWS: false
+
+      # applicable only if VALIDATE_INBOUND_JWS is "true"
+      # allows disabling of validation on incoming PUT /parties/{idType}/{idValue} requests
+      VALIDATE_INBOUND_PUT_PARTIES_JWS: false
+
+      # Enable signing of outgoing requests
+      JWS_SIGN: false
+
+      # applicable only if JWS_SIGN is "true"
+      # allows disabling of signing on outgoing PUT /parties/{idType}/{idValue} requests
+      JWS_SIGN_PUT_PARTIES: false
+
+      # Path to JWS signing key (private key of THIS DFSP)
+      ## TODO: Uncomment the following lines if JWS_SIGN is enabled
+      # JWS_SIGNING_KEY_PATH: /jwsSigningKey.key
+      # JWS_VERIFICATION_KEYS_DIRECTORY: /jwsVerificationKeys
+      JWS_SIGNING_KEY_PATH: secrets/jwsSigningKey.key
+      JWS_VERIFICATION_KEYS_DIRECTORY: secrets/jwsVerificationKeys
+
+      # Location of certs and key required for TLS
+      # IN_CA_CERT_PATH:./secrets/cacert.pem
+      # IN_SERVER_CERT_PATH:./secrets/servercert.pem
+      # IN_SERVER_KEY_PATH:./secrets/serverkey.pem
+
+      # OUT_CA_CERT_PATH:./secrets/cacert.pem
+      # OUT_CLIENT_CERT_PATH:./secrets/servercert.pem
+      # OUT_CLIENT_KEY_PATH:./secrets/serverkey.pem
+
+      # The number of space characters by which to indent pretty-printed logs. If set to zero, log events
+      # will each be printed on a single line.
+      LOG_INDENT: 2
+
+      # REDIS CACHE CONNECTION
+      CACHE_URL: redis://{{ include "common.tplvalues.render" (dict "value" .Values.redis.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.redis.host "context" $)) }}:{{ .Values.redis.port | default .Values.global.redis.port }}/{{ .Values.redis.database | default .Values.global.redis.database }}
+      CACHE_SHOULD_EXPIRE: false
+      CACHE_EXPIRY_SECONDS: 3600
+
+      # SWITCH ENDPOINT
+      # The option 'PEER_ENDPOINT' has no effect if the remaining options 'ALS_ENDPOINT', 'QUOTES_ENDPOINT',
+      # 'BULK_QUOTES_ENDPOINT', 'TRANSFERS_ENDPOINT', 'BULK_TRANSFERS_ENDPOINT', 'TRANSACTION_REQUESTS_ENDPOINT' are specified.
+      PEER_ENDPOINT: extapi.mojahub.example.com
+
+      ### Set each Mojaloop Switch endpoint service individually
+      ALS_ENDPOINT: ""
+      QUOTES_ENDPOINT: ""
+      BULK_QUOTES_ENDPOINT: ""
+      TRANSACTION_REQUESTS_ENDPOINT: ""
+      TRANSFERS_ENDPOINT: ""
+      BULK_TRANSFERS_ENDPOINT: ""
+
+      # BACKEND ENDPOINT
+      BACKEND_ENDPOINT: mojaloop-simulator-core-connector:3003
+
+      # FSPID of this DFSP
+      DFSP_ID: "{{ .Values.config.simName }}"
+
+      # Secret used for generation and verification of secure ILP
+      ILP_SECRET: Quaixohyaesahju3thivuiChai5cahng
+
+      # expiry period in seconds for quote and transfers issued by the SDK
+      EXPIRY_SECONDS: 60
+
+      # if set to true the SDK will automatically accept all returned quotes
+      AUTO_ACCEPT_QUOTES: false
+
+      # if set to true the SDK will automatically accept a resolved party
+      AUTO_ACCEPT_PARTY: false
+
+      # if set to true the SDK will automatically accept a resolved party on a requestToPay operation
+      AUTO_ACCEPT_R2P_PARTY: false
+
+      # This parameter is only for the requestToPay transfers when the initiator is of type BUSINESS.
+      # if set to false the SDK will not automatically accept quote on a requestToPayTransfer.
+      # but will halt the operation after a quote response is received. A further
+      # confirmation call will be required to progress the requestToPayTransfer to authorization step.
+      AUTO_ACCEPT_R2P_BUSINESS_QUOTES: false
+
+      # if set to false the SDK will not automatically accept OTP on a requestToPay operation
+      # but will halt the operation after receiving entered OTP from payee. A further
+      # confirmation call will be required to progress the requestToPayTransfer to transfer step.
+      AUTO_ACCEPT_R2P_DEVICE_OTP: false
+
+      # this flag is for testing purpose only. sdk-scheme-adapter is not supposed to receive PUT /participants/{Type}/{ID},
+      # but for testing we can enable it by setting this flag to true
+      AUTO_ACCEPT_PARTICIPANTS_PUT: false
+
+      # when set to true, when sending money via the outbound API, the SDK will use the value
+      # of FSPIOP-Source header from the received quote response as the payeeFsp value in the
+      # transfer prepare request body instead of the value received in the payee party lookup.
+      # This behaviour should be enabled when the SDK user DFSP is in a forex enabled switch
+      # ecosystem and expects quotes and transfers to be rerouted by the switch to forex
+      # entities i.e. forex providing DFSPs. Please see the SDK documentation and switch
+      # operator documentation for more information on forex use cases.
+      USE_QUOTE_SOURCE_FSP_AS_TRANSFER_PAYEE_FSP: false
+
+      # set to true to validate ILP, otherwise false to ignore ILP
+      CHECK_ILP: true
+
+      # set to true to enable test features such as request cacheing and retrieval endpoints
+      ENABLE_TEST_FEATURES: true
+
+      # set to true to mock WSO2 oauth2 token endpoint
+      ENABLE_OAUTH_TOKEN_ENDPOINT: false
+      OAUTH_TOKEN_ENDPOINT_CLIENT_KEY: test-client-key
+      OAUTH_TOKEN_ENDPOINT_CLIENT_SECRET: test-client-secret
+      OAUTH_TOKEN_ENDPOINT_LISTEN_PORT: 6000
+
+      # WSO2 Bearer Token specific to golden-fsp instance and environment
+      WSO2_BEARER_TOKEN: 7718fa9b-be13-3fe7-87f0-a12cf1628168
+
+      # OAuth2 data used to obtain WSO2 bearer token
+      OAUTH_TOKEN_ENDPOINT: https://keycloak.mojahub.example.com/realms/dfsps/protocol/openid-connect/token
+      OAUTH_CLIENT_KEY: *authClientId
+      OAUTH_CLIENT_SECRET: *authClientSecret
+      OAUTH_REFRESH_SECONDS: 3600
+      # OAUTH_CLIENT_SECRET_KEY:
+      # OAUTH_CLIENT_SECRET_NAME:
+      # Set to true to respect expirity timestamps
+      REJECT_EXPIRED_QUOTE_RESPONSES: false
+      REJECT_TRANSFERS_ON_EXPIRED_QUOTES: false
+      REJECT_EXPIRED_TRANSFER_FULFILS: false
+
+      # Timeout for GET/POST/DELETE - PUT flow processing
+      REQUEST_PROCESSING_TIMEOUT_SECONDS: 4
+
+      # To allow transfer without a previous quote request, set this value to true.
+      # The incoming transfer request should consists of an ILP packet and a matching condition in this case.
+      # The fulfilment will be generated from the provided ILP packet, and must hash to the provided condition.
+      ALLOW_TRANSFER_WITHOUT_QUOTE: false
+
+      # To enable request for notification on fulfiled transfer
+      RESERVE_NOTIFICATION: true
+      # resources API versions should be string in format: "resourceOneName=1.0,resourceTwoName=1.1"
+      #RESOURCE_VERSIONS: transfers=1.1,participants=1.1
+
+      # Management API websocket connection settings.
+      # The Management API uses this for exchanging connector management messages.
+      MGMT_API_WS_URL: pm4ml-management-api
+      MGMT_API_WS_PORT: 4005
+
+      # Set to true to enable the use of PM4ML-related services e.g MCM, Management API service
+      # when running the scheme-adapter as a mojaloop connector component within Payment Manager for Mojaloop.
+      PM4ML_ENABLED: true
+
+      # Set FX Provider to use, this is temporary configuration until services component is implemented. Enable this for FX.
+      GET_SERVICES_FXP_RESPONSE: testfxp
+
+      # Supported Currencies by this DFSP. Enable this for FX.
+      SUPPORTED_CURRENCIES: "XOF"
+
+      ## API-SVC kafka config
+      BACKEND_EVENT_CONSUMER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      BACKEND_EVENT_PRODUCER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      FSPIOP_EVENT_CONSUMER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      FSPIOP_EVENT_PRODUCER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      BACKEND_EVENT_CONSUMER_GROUP_ID: "{{ .Values.config.simName }}-sdk_api_backend_consumer_group"
+      FSPIOP_EVENT_CONSUMER_GROUP_ID: "{{ .Values.config.simName }}-sdk_api_fspiop_consumer_group"
+      BACKEND_EVENT_CONSUMER_TOPICS: "{{ .Values.config.simName }}-topic-sdk-outbound-domain-events"
+      BACKEND_EVENT_PRODUCER_TOPIC: "{{ .Values.config.simName }}-topic-sdk-outbound-domain-events"
+      FSPIOP_EVENT_CONSUMER_TOPICS: "{{ .Values.config.simName }}-topic-sdk-outbound-domain-events"
+      FSPIOP_EVENT_PRODUCER_TOPIC: "{{ .Values.config.simName }}-topic-sdk-outbound-domain-events"
+
+      ## SDKBULK: Enable following params for bulk
+      ENABLE_BACKEND_EVENT_HANDLER: false
+      ENABLE_FSPIOP_EVENT_HANDLER: false
+
+    podAffinityPreset: ""
+    ## @param podAntiAffinityPreset Pod anti-affinity preset. Ignored if `main.affinity` is set. Allowed values: `soft` or `hard`
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+    ##
+    podAntiAffinityPreset: soft
+    ## Node affinity preset
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
+    ##
+
+    nodeAffinityPreset:
+      ## @param nodeAffinityPreset.type Node affinity preset type. Ignored if `main.affinity` is set. Allowed values: `soft` or `hard`
+      ##
+      type: ""
+      ## @param nodeAffinityPreset.key Node label key to match. Ignored if `main.affinity` is set
+      ##
+      key: ""
+      ## @param nodeAffinityPreset.values Node label values to match. Ignored if `main.affinity` is set
+      ## E.g.
+      ## values:
+      ##   - e2e-az1
+      ##   - e2e-az2
+      ##
+      values: []
+    ## @param affinity Affinity for %%MAIN_CONTAINER_NAME%% pods assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+    ## NOTE: `podAffinityPreset`, `main.podAntiAffinityPreset`, and `main.nodeAffinityPreset` will be ignored when it's set
+    ##
+
+    ## Pod scheduling preferences.
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+    affinity: {}
+
+    ## Node labels for pod assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+    nodeSelector: {}
+
+    ## Set toleration for scheduler
+    ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+    tolerations: []
+
+    ## Configure Pods Security Context
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+    ## @param podSecurityContext.enabled Enabled %%MAIN_CONTAINER_NAME%% pods' Security Context
+    ## @param podSecurityContext.fsGroup Set %%MAIN_CONTAINER_NAME%% pod's Security Context fsGroup
+    ##
+    podSecurityContext:
+      enabled: true
+      fsGroup: 1001
+    ## Configure Container Security Context
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+    ## @param containerSecurityContext.enabled Enabled %%MAIN_CONTAINER_NAME%% containers' Security Context
+    ## @param containerSecurityContext.runAsUser Set %%MAIN_CONTAINER_NAME%% containers' Security Context runAsUser
+    ##
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+
+    image:
+      registry: docker.io
+      repository: mojaloop/sdk-scheme-adapter
+      tag: v24.6.3
+      ## Specify a imagePullPolicy
+      ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
+      ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+      ##
+      pullPolicy: IfNotPresent
+      ## Optionally specify an array of imagePullSecrets.
+      ## Secrets must be manually created in the namespace.
+      ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+      ## e.g:
+      ## pullSecrets:
+      ##   - myRegistryKeySecretName
+      ##
+      pullSecrets: []
+      ## Enable debug mode
+      ##
+      debug: false
+
+    replicaCount: 1
+    command:
+      - yarn
+      - start:api-svc
+
+    ## Enable diagnostic mode in the deployment
+    ##
+    diagnosticMode:
+      ## @param diagnosticMode.enabled Enable diagnostic mode (all probes will be disabled and the command will be overridden)
+      ##
+      enabled: false
+      ## @param diagnosticMode.command Command to override all containers in the deployment
+      ##
+      command:
+        - yarn
+        - start
+      ## @param diagnosticMode.args Args to override all containers in the deployment
+      ##
+      args:
+        - --inspect=0.0.0.0:{{ .Values.diagnosticMode.debug.port }}
+
+      ## @param diagnosticMode.debug config to override all debug information
+      ##
+      debug:
+        internalPort: 9229
+        port: 9229
+
+    ## @param initContainers Add additional init containers to the %%MAIN_CONTAINER_NAME%% pod(s)
+    ## ref: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+    ## e.g:
+    ## initContainers:
+    ##  - name: your-image-name
+    ##    image: your-image
+    ##    imagePullPolicy: Always
+    ##    command: ['sh', '-c', 'echo "hello world"']
+    ##
+    # initContainers: []
+    initContainers: |
+      - name: wait-for-redis
+        image: redis:7.0.5
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - until redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} ping;
+            do
+              echo --------------------;
+              echo Waiting for Redis...;
+              sleep 2;
+            done;
+            echo ====================;
+            echo Redis ok!;
+        env:
+          - name: REDIS_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.redis.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.redis.host "context" $)) | quote }}
+          - name: REDIS_PORT
+            value: {{ .Values.redis.port | default .Values.global.redis.port | quote }}
+      {{- if .Values.config.bulkTransactionSupportEnabled }}
+      - name: wait-for-kafka
+        image: solsson/kafka:2.8.1
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - until ./bin/kafka-broker-api-versions.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT};
+            do
+              echo --------------------;
+              echo Waiting for Kafka...;
+              sleep 2;
+            done;
+            echo ====================;
+            echo Kafka ok!;
+        env:
+          - name: KAFKA_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) | quote }}
+          - name: KAFKA_PORT
+            value: {{ .Values.kafka.port | default .Values.global.kafka.port | quote }}
+      - name: kafka-topics-create
+        image: docker.io/bitnami/kafka:3.2
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --list;
+            echo 'Creating kafka topics';
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --create --if-not-exists --topic ${SIM_NAME}-topic-sdk-outbound-command-events --replication-factor 1 --partitions 1;
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --create --if-not-exists --topic ${SIM_NAME}-topic-sdk-outbound-domain-events --replication-factor 1 --partitions 1;
+            echo -e 'Successfully created the following topics:';
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --list;
+        env:
+          - name: KAFKA_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) | quote }}
+          - name: KAFKA_PORT
+            value: {{ .Values.kafka.port | default .Values.global.kafka.port | quote }}
+          - name: SIM_NAME
+            value: {{ .Values.config.simName }}
+      {{- end }}
+
+    readinessProbe: |
+      httpGet:
+        path: /
+        port: {{ .Values.env.OUTBOUND_LISTEN_PORT }}
+      initialDelaySeconds: 15
+      periodSeconds: 15
+    livenessProbe: |
+      httpGet:
+        path: /
+        port: {{ .Values.env.OUTBOUND_LISTEN_PORT }}
+      initialDelaySeconds: 15
+      periodSeconds: 15
+
+    ## metric configuration for prometheus instrumentation
+    metrics:
+      ## flag to enable/disable the metrics end-points
+      enabled: true
+      config:
+        timeout: 5000
+        port: "{{ .Values.env.METRICS_SERVER_LISTEN_PORT }}"
+        prefix: moja_
+        defaultLabels:
+          serviceName: sdk-scheme-adapter-api-svc
+
+    service:
+      ## Not used by the SDK-Scheme-Adapter
+      # internalPort: 3000
+      ## @param service.type %%MAIN_CONTAINER_NAME%% service type
+      ##
+      type: ClusterIP
+      ## @param service.port %%MAIN_CONTAINER_NAME%% service HTTP port
+      ##
+      port: 80
+      ## @param service.httpsPort %%MAIN_CONTAINER_NAME%% service HTTPS port
+      ##
+      httpsPort: 443
+      ## Node ports to expose
+      ## @param service.nodePorts.http Node port for HTTP
+      ## @param service.nodePorts.https Node port for HTTPS
+      ## NOTE: choose port between <30000-32767>
+      ##
+      nodePorts:
+        http:
+        https:
+      ## @param service.clusterIP %%MAIN_CONTAINER_NAME%% service Cluster IP
+      ## e.g.:
+      ## clusterIP: None
+      ##
+      clusterIP:
+      ## @param service.loadBalancerIP %%MAIN_CONTAINER_NAME%% service Load Balancer IP
+      ## ref: https://kubernetes.io/docs/concepts/services-networking/service/#type-loadbalancer
+      ##
+      loadBalancerIP:
+      ## @param service.loadBalancerSourceRanges %%MAIN_CONTAINER_NAME%% service Load Balancer sources
+      ## ref: https://kubernetes.io/docs/tasks/access-application-cluster/configure-cloud-provider-firewall/#restrict-access-for-loadbalancer-service
+      ## e.g:
+      ## loadBalancerSourceRanges:
+      ##   - 10.10.10.0/24
+      ##
+      loadBalancerSourceRanges: []
+      ## @param service.externalTrafficPolicy %%MAIN_CONTAINER_NAME%% service external traffic policy
+      ## ref http://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
+      ##
+      externalTrafficPolicy: Cluster
+      ## @param service.annotations Additional custom annotations for %%MAIN_CONTAINER_NAME%% service
+      ##
+      annotations: {}
+
+    ingress:
+      ## @param ingress.enabled Enable ingress record generation for %%MAIN_CONTAINER_NAME%%
+      ##
+      enabled: true
+      ## @param ingress.pathType Ingress path type
+      ##
+      pathType: ImplementationSpecific
+      ## @param ingress.apiVersion Force Ingress API version (automatically detected if not set)
+      ##
+      apiVersion:
+      ## @param ingress.hostname Default host for the ingress record
+      ##
+      hostname: dfsp-sdk.mojalab.example.com
+      ## @param ingress.path Default path for the ingress record
+      ## NOTE: You may need to set this to '/*' in order to use this with ALB ingress controllers
+      ##
+      path: /
+      ## @param ingress.annotations Additional custom annotations for the ingress record
+      ## NOTE: If `ingress.certManager=true`, annotation `kubernetes.io/tls-acme: "true"` will automatically be added
+      ##
+      # annotations: {}
+      annotations:
+        nginx.ingress.kubernetes.io/rewrite-target: /$2
+        kubernetes.io/ingress.class: nginx
+      ## Example annotations for ingress class and rewrite-targets
+      ## https://kubernetes.github.io/ingress-nginx/examples/rewrite/
+      # nginx.ingress.kubernetes.io/rewrite-target: '/'
+      # nginx.ingress.kubernetes.io/rewrite-target: '/$2'
+      ## https://kubernetes.github.io/ingress-nginx/user-guide/multiple-ingress/
+      # kubernetes.io/ingress.class: nginx
+      ## https://kubernetes.github.io/ingress-nginx/user-guide/tls/#automated-certificate-management-with-kube-lego
+      # kubernetes.io/tls-acme: "true""
+
+      ## @param ingress.tls Enable TLS configuration for the host defined at `ingress.hostname` parameter
+      ## TLS certificates will be retrieved from a TLS secret with name: `{{- printf "%s-tls" .Values.ingress.hostname }}`
+      ## You can:
+      ##   - Use the `ingress.secrets` parameter to create this TLS secret
+      ##   - Relay on cert-manager to create it by setting `ingress.certManager=true`
+      ##   - Relay on Helm to create self-signed certificates by setting `ingress.selfSigned=true`
+      ##
+      tls: false
+      ## @param ingress.certManager Add the corresponding annotations for cert-manager integration
+      ##
+      certManager: false
+      ## @param ingress.selfSigned Create a TLS secret for this ingress record using self-signed certificates generated by Helm
+      ##
+      selfSigned: false
+      ## @param ingress.extraHosts An array with additional hostname(s) to be covered with the ingress record
+      ## e.g:
+      ## extraHosts:
+      ##   - name: transfer-api-svc.local
+      ##     path: /
+      ##
+      ## @param ingress.extraPaths An array with additional arbitrary paths that may need to be added to the ingress under the main host
+      ## e.g:
+      ## extraPaths:
+      ## - path: /*
+      ##   backend:
+      ##     serviceName: ssl-redirect
+      ##     servicePort: use-annotation
+      ##
+      # extraPaths: []
+      extraPaths:
+        - path: /inbound(/|$)(.*)
+          pathType: ImplementationSpecific
+          backend:
+            service:
+              name: '{{ include "common.names.fullname" . }}'
+              port:
+                name: inboundapi
+        - path: /outbound(/|$)(.*)
+          pathType: ImplementationSpecific
+          backend:
+            service:
+              name: '{{ include "common.names.fullname" . }}'
+              port:
+                name: outboundapi
+        - path: /sdktest(/|$)(.*)
+          pathType: ImplementationSpecific
+          backend:
+            service:
+              name: '{{ include "common.names.fullname" . }}'
+              port:
+                name: testapi
+      ## @param ingress.extraTls TLS configuration for additional hostname(s) to be covered with this ingress record
+      ## ref: https://kubernetes.io/docs/concepts/services-networking/ingress/#tls
+      ## e.g:
+      ## extraTls:
+      ## - hosts:
+      ##     - transfer-api-svc.local
+      ##   secretName: transfer-api-svc.local-tls
+      ##
+      extraTls: []
+      ## @param ingress.secrets Custom TLS certificates as secrets
+      ## NOTE: 'key' and 'certificate' are expected in PEM format
+      ## NOTE: 'name' should line up with a 'secretName' set further up
+      ## If it is not set and you're using cert-manager, this is unneeded, as it will create a secret for you with valid certificates
+      ## If it is not set and you're NOT using cert-manager either, self-signed certificates will be created valid for 365 days
+      ## It is also possible to create and manage the certificates outside of this helm chart
+      ## Please see README.md for more information
+      ## e.g:
+      ## secrets:
+      ##   - name: transfer-api-svc.local-tls
+      ##     key: |-
+      ##       -----BEGIN RSA PRIVATE KEY-----
+      ##       ...
+      ##       -----END RSA PRIVATE KEY-----
+      ##     certificate: |-
+      ##       -----BEGIN CERTIFICATE-----
+      ##       ...
+      ##       -----END CERTIFICATE-----
+      ##
+      secrets: []
+      className: "nginx"
+
+    ## RBAC configuration
+    ##
+    rbac:
+      ## @param rbac.create Specifies whether RBAC resources should be created
+      ##
+      create: false
+
+    ## ServiceAccount configuration
+    ##
+    serviceAccount:
+      ## @param serviceAccount.create Specifies whether a ServiceAccount should be created
+      ##
+      create: false
+      ## @param serviceAccount.name The name of the ServiceAccount to use.
+      ## If not set and create is true, a name is generated using the common.names.fullname template
+      ##
+      name: ""
+
+  sdk-scheme-adapter-dom-evt-handler:
+    ## SDKBULK: Enabled following param for bulk
+    enabled: false
+
+    ## Set this if you want to use the global override
+    # kafka: {}
+    ## Set this to override this specifically
+    kafka:
+      host: pm4ml-kafka
+      port: 9092
+
+    ## Set this if you want to use the global override
+    redis: {}
+    ## Set this to override this specifically
+    # redis:
+    #   host: redis
+    #   port: 6379
+    #   database: 0 # This is a number between 0 to 15
+
+    config:
+      simName: *dfspId
+
+    env:
+      ## outbound-domain-event-handler
+      # LOG_LEVEL: info
+      DOMAIN_EVENT_API_SERVER_ENABLED: true
+      DOMAIN_EVENT_API_SERVER_PORT: 8001
+      REDIS_CONNECTION_URL: redis://{{ include "common.tplvalues.render" (dict "value" .Values.redis.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.redis.host "context" $)) }}:{{ .Values.redis.port | default .Values.global.redis.port }}/{{ .Values.redis.database | default .Values.global.redis.database }}
+      COMMAND_EVENT_CONSUMER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      DOMAIN_EVENT_PRODUCER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      DOMAIN_EVENT_CONSUMER_GROUP_ID: "{{ .Values.config.simName }}-domain_events_consumer_group"
+      DOMAIN_EVENT_CONSUMER_TOPICS: "{{ .Values.config.simName }}-topic-sdk-outbound-domain-events"
+      COMMAND_EVENT_PRODUCER_TOPIC: "{{ .Values.config.simName }}-topic-sdk-outbound-command-events"
+
+    podAffinityPreset: ""
+    ## @param podAntiAffinityPreset Pod anti-affinity preset. Ignored if `main.affinity` is set. Allowed values: `soft` or `hard`
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+    ##
+    podAntiAffinityPreset: soft
+    ## Node affinity preset
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
+    ##
+
+    nodeAffinityPreset:
+      ## @param nodeAffinityPreset.type Node affinity preset type. Ignored if `main.affinity` is set. Allowed values: `soft` or `hard`
+      ##
+      type: ""
+      ## @param nodeAffinityPreset.key Node label key to match. Ignored if `main.affinity` is set
+      ##
+      key: ""
+      ## @param nodeAffinityPreset.values Node label values to match. Ignored if `main.affinity` is set
+      ## E.g.
+      ## values:
+      ##   - e2e-az1
+      ##   - e2e-az2
+      ##
+      values: []
+    ## @param affinity Affinity for %%MAIN_CONTAINER_NAME%% pods assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+    ## NOTE: `podAffinityPreset`, `main.podAntiAffinityPreset`, and `main.nodeAffinityPreset` will be ignored when it's set
+    ##
+
+    ## Pod scheduling preferences.
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+    affinity: {}
+
+    ## Node labels for pod assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+    nodeSelector: {}
+
+    ## Set toleration for scheduler
+    ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+    tolerations: []
+
+    ## Configure Pods Security Context
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+    ## @param podSecurityContext.enabled Enabled %%MAIN_CONTAINER_NAME%% pods' Security Context
+    ## @param podSecurityContext.fsGroup Set %%MAIN_CONTAINER_NAME%% pod's Security Context fsGroup
+    ##
+    podSecurityContext:
+      enabled: true
+      fsGroup: 1001
+    ## Configure Container Security Context
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+    ## @param containerSecurityContext.enabled Enabled %%MAIN_CONTAINER_NAME%% containers' Security Context
+    ## @param containerSecurityContext.runAsUser Set %%MAIN_CONTAINER_NAME%% containers' Security Context runAsUser
+    ##
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+
+    image:
+      registry: docker.io
+      repository: mojaloop/sdk-scheme-adapter
+      tag: v24.6.3
+      ## Specify a imagePullPolicy
+      ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
+      ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+      ##
+      pullPolicy: IfNotPresent
+      ## Optionally specify an array of imagePullSecrets.
+      ## Secrets must be manually created in the namespace.
+      ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+      ## e.g:
+      ## pullSecrets:
+      ##   - myRegistryKeySecretName
+      ##
+      pullSecrets: []
+      ## Enable debug mode
+      ##
+      debug: false
+
+    replicaCount: 1
+    command:
+      - yarn
+      - start:event-handler
+
+    ## Enable diagnostic mode in the deployment
+    ##
+    diagnosticMode:
+      ## @param diagnosticMode.enabled Enable diagnostic mode (all probes will be disabled and the command will be overridden)
+      ##
+      enabled: false
+      ## @param diagnosticMode.command Command to override all containers in the deployment
+      ##
+      command:
+        - yarn
+        - start
+      ## @param diagnosticMode.args Args to override all containers in the deployment
+      ##
+      args:
+        - --inspect=0.0.0.0:{{ .Values.diagnosticMode.debug.port }}
+
+      ## @param diagnosticMode.debug config to override all debug information
+      ##
+      debug:
+        internalPort: 9229
+        port: 9229
+
+    ## @param initContainers Add additional init containers to the %%MAIN_CONTAINER_NAME%% pod(s)
+    ## ref: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+    ## e.g:
+    ## initContainers:
+    ##  - name: your-image-name
+    ##    image: your-image
+    ##    imagePullPolicy: Always
+    ##    command: ['sh', '-c', 'echo "hello world"']
+    ##
+    # initContainers: []
+    initContainers: |
+      - name: wait-for-kafka
+        image: solsson/kafka:2.8.1
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - until ./bin/kafka-broker-api-versions.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT};
+            do
+              echo --------------------;
+              echo Waiting for Kafka...;
+              sleep 2;
+            done;
+            echo ====================;
+            echo Kafka ok!;
+        env:
+          - name: KAFKA_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) | quote }}
+          - name: KAFKA_PORT
+            value: {{ .Values.kafka.port | default .Values.global.kafka.port | quote }}
+      - name: kafka-topics-create
+        image: docker.io/bitnami/kafka:3.2
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --list;
+            echo 'Creating kafka topics';
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --create --if-not-exists --topic ${SIM_NAME}-topic-sdk-outbound-command-events --replication-factor 1 --partitions 1;
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --create --if-not-exists --topic ${SIM_NAME}-topic-sdk-outbound-domain-events --replication-factor 1 --partitions 1;
+            echo -e 'Successfully created the following topics:';
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --list;
+        env:
+          - name: KAFKA_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) | quote }}
+          - name: KAFKA_PORT
+            value: {{ .Values.kafka.port | default .Values.global.kafka.port | quote }}
+          - name: SIM_NAME
+            value: {{ .Values.config.simName }}
+      - name: wait-for-redis
+        image: redis:7.0.5
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - until redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} ping;
+            do
+              echo --------------------;
+              echo Waiting for Redis...;
+              sleep 2;
+            done;
+            echo ====================;
+            echo Redis ok!;
+        env:
+          - name: REDIS_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.redis.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.redis.host "context" $)) | quote }}
+          - name: REDIS_PORT
+            value: {{ .Values.redis.port | default .Values.global.redis.port | quote }}
+
+    readinessProbe: |
+      httpGet:
+        path: /health
+        port: {{ .Values.env.DOMAIN_EVENT_API_SERVER_PORT }}
+      initialDelaySeconds: 15
+      periodSeconds: 15
+    livenessProbe: |
+      httpGet:
+        path: /health
+        port: {{ .Values.env.DOMAIN_EVENT_API_SERVER_PORT }}
+      initialDelaySeconds: 15
+      periodSeconds: 15
+
+    ## metric configuration for prometheus instrumentation
+    ## TODO: NOT SUPPORTED
+    metrics:
+      ## flag to enable/disable the metrics end-points
+      enabled: false
+      config:
+        timeout: 5000
+        port: "{{ .Values.env.DOMAIN_EVENT_API_SERVER_PORT }}"
+        prefix: moja_
+        defaultLabels:
+          serviceName: sdk-scheme-adapter-dom-evt-handler
+
+    service:
+      ## Not used by the SDK-Scheme-Adapter
+      internalPort: 8001
+      ## @param service.type %%MAIN_CONTAINER_NAME%% service type
+      ##
+      type: ClusterIP
+      ## @param service.port %%MAIN_CONTAINER_NAME%% service HTTP port
+      ##
+      port: 80
+      ## @param service.httpsPort %%MAIN_CONTAINER_NAME%% service HTTPS port
+      ##
+      httpsPort: 443
+      ## Node ports to expose
+      ## @param service.nodePorts.http Node port for HTTP
+      ## @param service.nodePorts.https Node port for HTTPS
+      ## NOTE: choose port between <30000-32767>
+      ##
+      nodePorts:
+        http:
+        https:
+      ## @param service.clusterIP %%MAIN_CONTAINER_NAME%% service Cluster IP
+      ## e.g.:
+      ## clusterIP: None
+      ##
+      clusterIP:
+      ## @param service.loadBalancerIP %%MAIN_CONTAINER_NAME%% service Load Balancer IP
+      ## ref: https://kubernetes.io/docs/concepts/services-networking/service/#type-loadbalancer
+      ##
+      loadBalancerIP:
+      ## @param service.loadBalancerSourceRanges %%MAIN_CONTAINER_NAME%% service Load Balancer sources
+      ## ref: https://kubernetes.io/docs/tasks/access-application-cluster/configure-cloud-provider-firewall/#restrict-access-for-loadbalancer-service
+      ## e.g:
+      ## loadBalancerSourceRanges:
+      ##   - 10.10.10.0/24
+      ##
+      loadBalancerSourceRanges: []
+      ## @param service.externalTrafficPolicy %%MAIN_CONTAINER_NAME%% service external traffic policy
+      ## ref http://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
+      ##
+      externalTrafficPolicy: Cluster
+      ## @param service.annotations Additional custom annotations for %%MAIN_CONTAINER_NAME%% service
+      ##
+      annotations: {}
+
+    ingress:
+      ## @param ingress.enabled Enable ingress record generation for %%MAIN_CONTAINER_NAME%%
+      ##
+      enabled: false
+      ## @param ingress.pathType Ingress path type
+      ##
+      pathType: ImplementationSpecific
+      ## @param ingress.apiVersion Force Ingress API version (automatically detected if not set)
+      ##
+      apiVersion:
+      ## @param ingress.hostname Default host for the ingress record
+      ##
+      hostname: dfsp-mpm.mojalab.example.com
+      ## @param ingress.path Default path for the ingress record
+      ## NOTE: You may need to set this to '/*' in order to use this with ALB ingress controllers
+      ##
+      path: /
+      ## @param ingress.annotations Additional custom annotations for the ingress record
+      ## NOTE: If `ingress.certManager=true`, annotation `kubernetes.io/tls-acme: "true"` will automatically be added
+      ##
+      annotations: {}
+      ## Example annotations for ingress class and rewrite-targets
+      ## https://kubernetes.github.io/ingress-nginx/examples/rewrite/
+      # nginx.ingress.kubernetes.io/rewrite-target: '/'
+      # nginx.ingress.kubernetes.io/rewrite-target: '/$2'
+      ## https://kubernetes.github.io/ingress-nginx/user-guide/multiple-ingress/
+      # kubernetes.io/ingress.class: nginx
+      ## https://kubernetes.github.io/ingress-nginx/user-guide/tls/#automated-certificate-management-with-kube-lego
+      # kubernetes.io/tls-acme: "true""
+
+      ## @param ingress.tls Enable TLS configuration for the host defined at `ingress.hostname` parameter
+      ## TLS certificates will be retrieved from a TLS secret with name: `{{- printf "%s-tls" .Values.ingress.hostname }}`
+      ## You can:
+      ##   - Use the `ingress.secrets` parameter to create this TLS secret
+      ##   - Relay on cert-manager to create it by setting `ingress.certManager=true`
+      ##   - Relay on Helm to create self-signed certificates by setting `ingress.selfSigned=true`
+      ##
+      tls: false
+      ## @param ingress.certManager Add the corresponding annotations for cert-manager integration
+      ##
+      certManager: false
+      ## @param ingress.selfSigned Create a TLS secret for this ingress record using self-signed certificates generated by Helm
+      ##
+      selfSigned: false
+      ## @param ingress.extraHosts An array with additional hostname(s) to be covered with the ingress record
+      ## e.g:
+      ## extraHosts:
+      ##   - name: transfer-api-svc.local
+      ##     path: /
+      ##
+      ## @param ingress.extraPaths An array with additional arbitrary paths that may need to be added to the ingress under the main host
+      ## e.g:
+      ## extraPaths:
+      ## - path: /*
+      ##   backend:
+      ##     serviceName: ssl-redirect
+      ##     servicePort: use-annotation
+      ##
+      # extraPaths: []
+      ## TODO: REMOVE
+      # extraPaths:
+      # - path: /inbound/
+      #   pathType: ImplementationSpecific
+      #   backend:
+      #     service:
+      #       name: '{{ include "common.names.fullname" . }}'
+      #       port:
+      #         name: inboundapi
+      #     # serviceName: '{{ include "common.names.fullname" . }}'
+      #     # servicePort: inboundapi
+      # - path: /outbound/
+      #   pathType: ImplementationSpecific
+      #   backend:
+      #     service:
+      #       name: '{{ include "common.names.fullname" . }}'
+      #       port:
+      #         name: outboundapi
+      #     # serviceName: '{{ include "common.names.fullname" . }}'
+      #     # servicePort: outboundapi
+      # - path: /sdktest/
+      #   pathType: ImplementationSpecific
+      #   backend:
+      #     service:
+      #       name: '{{ include "common.names.fullname" . }}'
+      #       port:
+      #         name: testapi
+      ## This is required for
+      # serviceName: '{{ include "common.names.fullname" . }}'
+      # servicePort: testapi
+      ## @param ingress.extraTls TLS configuration for additional hostname(s) to be covered with this ingress record
+      ## ref: https://kubernetes.io/docs/concepts/services-networking/ingress/#tls
+      ## e.g:
+      ## extraTls:
+      ## - hosts:
+      ##     - transfer-api-svc.local
+      ##   secretName: transfer-api-svc.local-tls
+      ##
+      extraTls: []
+      ## @param ingress.secrets Custom TLS certificates as secrets
+      ## NOTE: 'key' and 'certificate' are expected in PEM format
+      ## NOTE: 'name' should line up with a 'secretName' set further up
+      ## If it is not set and you're using cert-manager, this is unneeded, as it will create a secret for you with valid certificates
+      ## If it is not set and you're NOT using cert-manager either, self-signed certificates will be created valid for 365 days
+      ## It is also possible to create and manage the certificates outside of this helm chart
+      ## Please see README.md for more information
+      ## e.g:
+      ## secrets:
+      ##   - name: transfer-api-svc.local-tls
+      ##     key: |-
+      ##       -----BEGIN RSA PRIVATE KEY-----
+      ##       ...
+      ##       -----END RSA PRIVATE KEY-----
+      ##     certificate: |-
+      ##       -----BEGIN CERTIFICATE-----
+      ##       ...
+      ##       -----END CERTIFICATE-----
+      ##
+      secrets: []
+      className: "nginx"
+
+    ## RBAC configuration
+    ##
+    rbac:
+      ## @param rbac.create Specifies whether RBAC resources should be created
+      ##
+      create: false
+
+    ## ServiceAccount configuration
+    ##
+    serviceAccount:
+      ## @param serviceAccount.create Specifies whether a ServiceAccount should be created
+      ##
+      create: false
+      ## @param serviceAccount.name The name of the ServiceAccount to use.
+      ## If not set and create is true, a name is generated using the common.names.fullname template
+      ##
+      name: ""
+
+  sdk-scheme-adapter-cmd-evt-handler:
+    ## SDKBULK: Enabled following param for bulk
+    enabled: false
+
+    ## Set this if you want to use the global override
+    #kafka: {}
+    ## Set this to override this specifically
+    kafka:
+      host: pm4ml-kafka
+      port: 9092
+
+    ## Set this if you want to use the global override
+    redis: {}
+    ## Set this to override this specifically
+    # redis:
+    #   host: redis
+    #   port: 6379
+    #   database: 0 # This is a number between 0 to 15
+
+    config:
+      simName: *dfspId
+
+    env:
+      ## outbound-command-event-handler
+      # LOG_LEVEL: info
+      COMMAND_EVENT_API_SERVER_ENABLED: true
+      COMMAND_EVENT_API_SERVER_PORT: 8000
+      REDIS_CONNECTION_URL: redis://{{ include "common.tplvalues.render" (dict "value" .Values.redis.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.redis.host "context" $)) }}:{{ .Values.redis.port | default .Values.global.redis.port }}/{{ .Values.redis.database | default .Values.global.redis.database }}
+      COMMAND_EVENT_CONSUMER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      DOMAIN_EVENT_PRODUCER_BROKER_LIST: '{{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) }}:{{ .Values.kafka.port | default .Values.global.kafka.port }}'
+      MAX_ITEMS_PER_BATCH: 1000
+      COMMAND_EVENT_CONSUMER_GROUP_ID: "{{ .Values.config.simName }}-command_events_consumer_group"
+      COMMAND_EVENT_CONSUMER_TOPICS: "{{ .Values.config.simName }}-topic-sdk-outbound-command-events"
+      DOMAIN_EVENT_PRODUCER_TOPIC: "{{ .Values.config.simName }}-topic-sdk-outbound-domain-events"
+
+    podAffinityPreset: ""
+    ## @param podAntiAffinityPreset Pod anti-affinity preset. Ignored if `main.affinity` is set. Allowed values: `soft` or `hard`
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+    ##
+    podAntiAffinityPreset: soft
+    ## Node affinity preset
+    ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
+    ##
+
+    nodeAffinityPreset:
+      ## @param nodeAffinityPreset.type Node affinity preset type. Ignored if `main.affinity` is set. Allowed values: `soft` or `hard`
+      ##
+      type: ""
+      ## @param nodeAffinityPreset.key Node label key to match. Ignored if `main.affinity` is set
+      ##
+      key: ""
+      ## @param nodeAffinityPreset.values Node label values to match. Ignored if `main.affinity` is set
+      ## E.g.
+      ## values:
+      ##   - e2e-az1
+      ##   - e2e-az2
+      ##
+      values: []
+    ## @param affinity Affinity for %%MAIN_CONTAINER_NAME%% pods assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+    ## NOTE: `podAffinityPreset`, `main.podAntiAffinityPreset`, and `main.nodeAffinityPreset` will be ignored when it's set
+    ##
+
+    ## Pod scheduling preferences.
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+    affinity: {}
+
+    ## Node labels for pod assignment
+    ## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+    nodeSelector: {}
+
+    ## Set toleration for scheduler
+    ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+    tolerations: []
+
+    ## Configure Pods Security Context
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+    ## @param podSecurityContext.enabled Enabled %%MAIN_CONTAINER_NAME%% pods' Security Context
+    ## @param podSecurityContext.fsGroup Set %%MAIN_CONTAINER_NAME%% pod's Security Context fsGroup
+    ##
+    podSecurityContext:
+      enabled: true
+      fsGroup: 1001
+    ## Configure Container Security Context
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+    ## @param containerSecurityContext.enabled Enabled %%MAIN_CONTAINER_NAME%% containers' Security Context
+    ## @param containerSecurityContext.runAsUser Set %%MAIN_CONTAINER_NAME%% containers' Security Context runAsUser
+    ##
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+
+    image:
+      registry: docker.io
+      repository: mojaloop/sdk-scheme-adapter
+      tag: v24.6.3
+      ## Specify a imagePullPolicy
+      ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
+      ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+      ##
+      pullPolicy: IfNotPresent
+      ## Optionally specify an array of imagePullSecrets.
+      ## Secrets must be manually created in the namespace.
+      ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+      ## e.g:
+      ## pullSecrets:
+      ##   - myRegistryKeySecretName
+      ##
+      pullSecrets: []
+      ## Enable debug mode
+      ##
+      debug: false
+
+    replicaCount: 1
+    command:
+      - yarn
+      - start:command-handler
+
+    ## Enable diagnostic mode in the deployment
+    ##
+    diagnosticMode:
+      ## @param diagnosticMode.enabled Enable diagnostic mode (all probes will be disabled and the command will be overridden)
+      ##
+      enabled: false
+      ## @param diagnosticMode.command Command to override all containers in the deployment
+      ##
+      command:
+        - yarn
+        - start
+      ## @param diagnosticMode.args Args to override all containers in the deployment
+      ##
+      args:
+        - --inspect=0.0.0.0:{{ .Values.diagnosticMode.debug.port }}
+
+      ## @param diagnosticMode.debug config to override all debug information
+      ##
+      debug:
+        internalPort: 9229
+        port: 9229
+
+    ## @param initContainers Add additional init containers to the %%MAIN_CONTAINER_NAME%% pod(s)
+    ## ref: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+    ## e.g:
+    ## initContainers:
+    ##  - name: your-image-name
+    ##    image: your-image
+    ##    imagePullPolicy: Always
+    ##    command: ['sh', '-c', 'echo "hello world"']
+    ##
+    # initContainers: []
+    initContainers: |
+      - name: wait-for-kafka
+        image: solsson/kafka:2.8.1
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - until ./bin/kafka-broker-api-versions.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT};
+            do
+              echo --------------------;
+              echo Waiting for Kafka...;
+              sleep 2;
+            done;
+            echo ====================;
+            echo Kafka ok!;
+        env:
+          - name: KAFKA_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) | quote }}
+          - name: KAFKA_PORT
+            value: {{ .Values.kafka.port | default .Values.global.kafka.port | quote }}
+      - name: kafka-topics-create
+        image: docker.io/bitnami/kafka:3.2
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --list;
+            echo 'Creating kafka topics';
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --create --if-not-exists --topic ${SIM_NAME}-topic-sdk-outbound-command-events --replication-factor 1 --partitions 1;
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --create --if-not-exists --topic ${SIM_NAME}-topic-sdk-outbound-domain-events --replication-factor 1 --partitions 1;
+            echo -e 'Successfully created the following topics:';
+            kafka-topics.sh --bootstrap-server ${KAFKA_HOST}:${KAFKA_PORT} --list;
+        env:
+          - name: KAFKA_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.kafka.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.kafka.host "context" $)) | quote }}
+          - name: KAFKA_PORT
+            value: {{ .Values.kafka.port | default .Values.global.kafka.port | quote }}
+          - name: SIM_NAME
+            value: {{ .Values.config.simName }}
+      - name: wait-for-redis
+        image: redis:7.0.5
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - until redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} ping;
+            do
+              echo --------------------;
+              echo Waiting for Redis...;
+              sleep 2;
+            done;
+            echo ====================;
+            echo Redis ok!;
+        env:
+          - name: REDIS_HOST
+            value: {{ include "common.tplvalues.render" (dict "value" .Values.redis.host "context" $) | default (include "common.tplvalues.render" (dict "value" .Values.global.redis.host "context" $)) | quote }}
+          - name: REDIS_PORT
+            value: {{ .Values.redis.port | default .Values.global.redis.port | quote }}
+
+    readinessProbe: |
+      httpGet:
+        path: /health
+        port: {{ .Values.env.COMMAND_EVENT_API_SERVER_PORT }}
+      initialDelaySeconds: 15
+      periodSeconds: 15
+    livenessProbe: |
+      httpGet:
+        path: /health
+        port: {{ .Values.env.COMMAND_EVENT_API_SERVER_PORT }}
+      initialDelaySeconds: 15
+      periodSeconds: 15
+
+    ## metric configuration for prometheus instrumentation
+    ## TODO: NOT SUPPORTED
+    metrics:
+      ## flag to enable/disable the metrics end-points
+      enabled: false
+      config:
+        timeout: 5000
+        port: "{{ .Values.env.COMMAND_EVENT_API_SERVER_PORT }}"
+        prefix: moja_
+        defaultLabels:
+          serviceName: sdk-scheme-adapter-cmd-evt-handler
+
+    service:
+      ## Not used by the SDK-Scheme-Adapter
+      internalPort: 8000
+      ## @param service.type %%MAIN_CONTAINER_NAME%% service type
+      ##
+      type: ClusterIP
+      ## @param service.port %%MAIN_CONTAINER_NAME%% service HTTP port
+      ##
+      port: 80
+      ## @param service.httpsPort %%MAIN_CONTAINER_NAME%% service HTTPS port
+      ##
+      httpsPort: 443
+      ## Node ports to expose
+      ## @param service.nodePorts.http Node port for HTTP
+      ## @param service.nodePorts.https Node port for HTTPS
+      ## NOTE: choose port between <30000-32767>
+      ##
+      nodePorts:
+        http:
+        https:
+      ## @param service.clusterIP %%MAIN_CONTAINER_NAME%% service Cluster IP
+      ## e.g.:
+      ## clusterIP: None
+      ##
+      clusterIP:
+      ## @param service.loadBalancerIP %%MAIN_CONTAINER_NAME%% service Load Balancer IP
+      ## ref: https://kubernetes.io/docs/concepts/services-networking/service/#type-loadbalancer
+      ##
+      loadBalancerIP:
+      ## @param service.loadBalancerSourceRanges %%MAIN_CONTAINER_NAME%% service Load Balancer sources
+      ## ref: https://kubernetes.io/docs/tasks/access-application-cluster/configure-cloud-provider-firewall/#restrict-access-for-loadbalancer-service
+      ## e.g:
+      ## loadBalancerSourceRanges:
+      ##   - 10.10.10.0/24
+      ##
+      loadBalancerSourceRanges: []
+      ## @param service.externalTrafficPolicy %%MAIN_CONTAINER_NAME%% service external traffic policy
+      ## ref http://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
+      ##
+      externalTrafficPolicy: Cluster
+      ## @param service.annotations Additional custom annotations for %%MAIN_CONTAINER_NAME%% service
+      ##
+      annotations: {}
+
+    ingress:
+      ## @param ingress.enabled Enable ingress record generation for %%MAIN_CONTAINER_NAME%%
+      ##
+      enabled: false
+      ## @param ingress.pathType Ingress path type
+      ##
+      pathType: ImplementationSpecific
+      ## @param ingress.apiVersion Force Ingress API version (automatically detected if not set)
+      ##
+      apiVersion:
+      ## @param ingress.hostname Default host for the ingress record
+      ##
+      hostname: dfsp-mpm.mojalab.example.com
+      ## @param ingress.path Default path for the ingress record
+      ## NOTE: You may need to set this to '/*' in order to use this with ALB ingress controllers
+      ##
+      path: /
+      ## @param ingress.annotations Additional custom annotations for the ingress record
+      ## NOTE: If `ingress.certManager=true`, annotation `kubernetes.io/tls-acme: "true"` will automatically be added
+      ##
+      annotations: {}
+      ## Example annotations for ingress class and rewrite-targets
+      ## https://kubernetes.github.io/ingress-nginx/examples/rewrite/
+      # nginx.ingress.kubernetes.io/rewrite-target: '/'
+      # nginx.ingress.kubernetes.io/rewrite-target: '/$2'
+      ## https://kubernetes.github.io/ingress-nginx/user-guide/multiple-ingress/
+      # kubernetes.io/ingress.class: nginx
+      ## https://kubernetes.github.io/ingress-nginx/user-guide/tls/#automated-certificate-management-with-kube-lego
+      # kubernetes.io/tls-acme: "true""
+
+      ## @param ingress.tls Enable TLS configuration for the host defined at `ingress.hostname` parameter
+      ## TLS certificates will be retrieved from a TLS secret with name: `{{- printf "%s-tls" .Values.ingress.hostname }}`
+      ## You can:
+      ##   - Use the `ingress.secrets` parameter to create this TLS secret
+      ##   - Relay on cert-manager to create it by setting `ingress.certManager=true`
+      ##   - Relay on Helm to create self-signed certificates by setting `ingress.selfSigned=true`
+      ##
+      tls: false
+      ## @param ingress.certManager Add the corresponding annotations for cert-manager integration
+      ##
+      certManager: false
+      ## @param ingress.selfSigned Create a TLS secret for this ingress record using self-signed certificates generated by Helm
+      ##
+      selfSigned: false
+      ## @param ingress.extraHosts An array with additional hostname(s) to be covered with the ingress record
+      ## e.g:
+      ## extraHosts:
+      ##   - name: transfer-api-svc.local
+      ##     path: /
+      ##
+      ## @param ingress.extraPaths An array with additional arbitrary paths that may need to be added to the ingress under the main host
+      ## e.g:
+      ## extraPaths:
+      ## - path: /*
+      ##   backend:
+      ##     serviceName: ssl-redirect
+      ##     servicePort: use-annotation
+      ##
+      # extraPaths: []
+      ## TODO: REMOVE
+      # extraPaths:
+      # - path: /inbound/
+      #   pathType: ImplementationSpecific
+      #   backend:
+      #     service:
+      #       name: '{{ include "common.names.fullname" . }}'
+      #       port:
+      #         name: inboundapi
+      #     # serviceName: '{{ include "common.names.fullname" . }}'
+      #     # servicePort: inboundapi
+      # - path: /outbound/
+      #   pathType: ImplementationSpecific
+      #   backend:
+      #     service:
+      #       name: '{{ include "common.names.fullname" . }}'
+      #       port:
+      #         name: outboundapi
+      #     # serviceName: '{{ include "common.names.fullname" . }}'
+      #     # servicePort: outboundapi
+      # - path: /sdktest/
+      #   pathType: ImplementationSpecific
+      #   backend:
+      #     service:
+      #       name: '{{ include "common.names.fullname" . }}'
+      #       port:
+      #         name: testapi
+      ## This is required for
+      # serviceName: '{{ include "common.names.fullname" . }}'
+      # servicePort: testapi
+      ## @param ingress.extraTls TLS configuration for additional hostname(s) to be covered with this ingress record
+      ## ref: https://kubernetes.io/docs/concepts/services-networking/ingress/#tls
+      ## e.g:
+      ## extraTls:
+      ## - hosts:
+      ##     - transfer-api-svc.local
+      ##   secretName: transfer-api-svc.local-tls
+      ##
+      extraTls: []
+      ## @param ingress.secrets Custom TLS certificates as secrets
+      ## NOTE: 'key' and 'certificate' are expected in PEM format
+      ## NOTE: 'name' should line up with a 'secretName' set further up
+      ## If it is not set and you're using cert-manager, this is unneeded, as it will create a secret for you with valid certificates
+      ## If it is not set and you're NOT using cert-manager either, self-signed certificates will be created valid for 365 days
+      ## It is also possible to create and manage the certificates outside of this helm chart
+      ## Please see README.md for more information
+      ## e.g:
+      ## secrets:
+      ##   - name: transfer-api-svc.local-tls
+      ##     key: |-
+      ##       -----BEGIN RSA PRIVATE KEY-----
+      ##       ...
+      ##       -----END RSA PRIVATE KEY-----
+      ##     certificate: |-
+      ##       -----BEGIN CERTIFICATE-----
+      ##       ...
+      ##       -----END CERTIFICATE-----
+      ##
+      secrets: []
+      className: "nginx"
+
+    ## RBAC configuration
+    ##
+    rbac:
+      ## @param rbac.create Specifies whether RBAC resources should be created
+      ##
+      create: false
+
+    ## ServiceAccount configuration
+    ##
+    serviceAccount:
+      ## @param serviceAccount.create Specifies whether a ServiceAccount should be created
+      ##
+      create: false
+      ## @param serviceAccount.name The name of the ServiceAccount to use.
+      ## If not set and create is true, a name is generated using the common.names.fullname template
+      ##
+      name: ""
+
+prometheus:
+  enabled: true
+  nodeExporter:
+    enabled: false
+  server:
+    persistentVolume:
+      enabled: true
+    extraScrapeConfigs: |
+      - job_name: 'scheme-adapter'
+        static_configs:
+          - targets:
+            - "scheme-adapter:4004"
+      - job_name: 'sim-core-connector'
+        static_configs:
+          - targets:
+            - "mojaloop-simulator-core-connector:7001"
+  alertmanager:
+    enabled: false
+  pushgateway:
+    enabled: false
+  kubeStateMetrics:
+    enabled: false
+
+mojaloop-core-connector:
+  imagePullCredentials: *imagePullCredentials
+  enabled: true
+  env:
+    BACKEND_ENDPOINT: http://pm4ml-mojaloop-simulator:3000
+    MLCONN_OUTBOUND_ENDPOINT: http://scheme-adapter:4001
+
+  image:
+    repository: pm4ml/mojaloop-payment-manager-simulator-core-connector
+    tag: 1.4.5
+
+  livenessProbe:
+    enabled: true
+    path: /health
+    port: http
+
+  readinessProbe:
+    enabled: true
+    path: /health
+    port: http
+
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      kubernetes.io/tls-acme: "true"
+    hosts:
+      - host: dfsp-mcc.mojalab.example.com
+        paths:
+          - path: "/"
+            servicePort: http
+
+  #citizens
+  # image:
+  #   repository: modusbox-mbx-docker.jfrog.io/modusintegration/citizens-core-connector
+  #   tag: 1.0.0
+
+  # finflux
+  # image:
+  #   repository: modusbox-mbx-docker.jfrog.io/modusintegration/finflux-pm4ml-core-connector
+  #   tag: 1.2.0
+
+  # iso20022
+  # image:
+  #   repository: pm4ml/iso20022-core-connector
+  #   tag: 0.0.8
+
+  # mambu
+  # image:
+  #   repository: modusbox-mbx-docker.jfrog.io/modusintegration/mambu-pm4ml-core-connector
+  #   tag: 1.0.8
+
+  # mifos
+  # image:
+  #   repository: modusbox-mbx-docker.jfrog.io/modusintegration/mifos-mojaloop-core-connector
+  #   tag: 1.0.4
+
+  # musoni
+  # image:
+  #   repository: modusbox-mbx-docker.jfrog.io/modusintegration/musoni-pm4ml-core-connector
+  #   tag: 1.0.0
+
+  # ooredoo
+  # image:
+  #   repository: modusbox-mbx-docker.jfrog.io/modusintegration/ooredoo-pm4ml-core-connector
+  #   tag: 1.0.3
+
+  # visa
+  # image:
+  #   repository: pm4ml/pm4ml-core-connector-visa-direct
+  #   tag: 1.0.0
+  # env:
+  #   MOJA_PORT: 4001
+  #   MOJA_HOSTNAME: scheme-adapter
+
+  # wallet
+  # image:
+  #   repository: pm4ml/wallet-core-connector
+  #   tag: 1.0.2
+
+mojaloop-payment-token-adapter:
+  imagePullCredentials: *imagePullCredentials
+  enabled: false
+
+sim-backend:
+  enabled: true
+  env:
+    OUTBOUND_ENDPOINT: http://scheme-adapter:4001
+    DFSP_ID: *dfspId
+  ingress:
+    enabled: false
+    host: dfsp-sim.mojalab.example.com
+    paths:
+      - path: /simapi
+        pathType: Prefix
+        portName: simapi
+      - path: /reportapi
+        pathType: Prefix
+        portName: reportapi
+      - path: /testapi
+        pathType: Prefix
+        portName: testapi
+
+sim-ui:
+  enabled: true
+  ingress:
+    enabled: false
+    hosts:
+      - host: dfsp-sim.mojalab.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+  env:
+    API_BASE_URL: http://dfsp-sim.mojalab.example.com/simapi
+
+ttk:
+  enabled: false
+  # payeeSimulationEnabled: false
+  ## The above option is not implemented. But this option is intended for automation of payee simulation using TTK.
+  ## For now, we can manually change the following to achieve this functionality
+  ## 1. Change scheme-adapter.env.BACKEND_ENDPOINT to {{ $.Release.Name }}-ml-testing-toolkit-backend:4040
+  ## 2. Disable sim-backend and mojaloop-core-connector (optional)
+  ## 3. Change SEND_CALLBACK_ENABLE to true in TTK user config (For bulk async callbacks)
+  ## 4. Change CALLBACK_ENDPOINT to {{ $.Release.Name }}-scheme-adapter:4001 (For bulk async callbacks)
+
+  ml-testing-toolkit-backend:
+    enabled: true
+    image:
+      repository: mojaloop/ml-testing-toolkit
+      tag: v17.2.0
+    command: '["sh", "-c", "until nslookup github.com; do sleep 5;done; cd /opt/default_config; for FILE in *; do newFileName=/opt/app/spec_files/${FILE//__/\\/}; mkdir -p ${newFileName%/*}; firstLine=$(head -n 1 $FILE | tr -d \\\"); regex=\"^(http|https|ftp)://\"; if [[ \"$firstLine\" =~ $regex ]]; then wget $firstLine -O $newFileName; else cp $FILE $newFileName; fi; done; cd /opt/app; npm run start;"]'
+    config_files:
+      user_config.json:
+        {
+          "VERSION": 1,
+          "CALLBACK_ENDPOINT": "http://{{ $.Release.Name }}-scheme-adapter:4001",
+          "SEND_CALLBACK_ENABLE": true,
+          "DEFAULT_ENVIRONMENT_FILE_NAME": "pm4ml-default-environment.json",
+          "GITHUB_CONFIG":
+            {
+              "TEST_CASES_REPO_OWNER": "mojaloop",
+              "TEST_CASES_REPO_NAME": "testing-toolkit-test-cases",
+              "TEST_CASES_REPO_DEFAULT_RELEASE_TAG": "latest",
+              "TEST_CASES_REPO_BASE_PATH": "collections/pm4ml",
+            },
+          "DEFAULT_REQUEST_TIMEOUT": 15000,
+          "FSPID": *dfspId,
+        }
+      system_config.json:
+        {
+          "API_DEFINITIONS":
+            [
+              {
+                "type": "mojaloop_connector_outbound",
+                "version": "2.1",
+                "folderPath": "mojaloop_connector_outbound_2.1",
+                "asynchronous": false,
+                "hostnames": [],
+                "prefix": "/sdk-out",
+              },
+              {
+                "type": "mojaloop_connector_backend",
+                "version": "2.1",
+                "folderPath": "mojaloop_connector_backend_2.1",
+                "asynchronous": false,
+              },
+              {
+                "type": "core_connector",
+                "version": "1.4",
+                "folderPath": "payment_manager_1.4",
+                "hostnames": [],
+                "prefix": "/cc-send",
+              },
+            ],
+        }
+      rules_response__default.json: https://raw.githubusercontent.com/mojaloop/testing-toolkit-test-cases/v17.0.0-iso.13/rules/pm4ml/forex/rules_sync_response/fxp_response_rules.json
+      api_definitions__mojaloop_connector_backend_2.1__api_spec.yaml: "https://raw.githubusercontent.com/mojaloop/api-snippets/v17.4.0/docs/sdk-scheme-adapter-backend-v2_1_0-openapi3-snippets.yaml"
+      api_definitions__mojaloop_connector_outbound_2.1__api_spec.yaml: "https://raw.githubusercontent.com/mojaloop/api-snippets/main/docs/sdk-scheme-adapter-outbound-v2_1_0-openapi3-snippets.yaml"
+      api_definitions__mojaloop_connector_outbound_2.1__callback_map.json: []
+    extraEnvironments:
+      pm4ml-default-environment.json:
+        {
+          "inputValues":
+            {
+              "ENABLE_WS_ASSERTIONS": true,
+              "WS_ASSERTION_TIMEOUT": 5000,
+              "RETRY_MAX_ATTEMPTS": 100,
+              "FROM_DISPLAY_NAME": "Display-Test",
+              "FROM_FIRST_NAME": "Firstname-Test",
+              "FROM_MIDDLE_NAME": "Middlename-Test",
+              "FROM_LAST_NAME": "Lastname-Test",
+              "FROM_DOB": "1984-01-01",
+              "FROM_FSP_ID": "testpayer",
+              "HOME_TRANSACTION_ID": "123ABC",
+              "NOTE": "test",
+              "P2P_AMOUNT": "10",
+              "P2P_CURRENCY": "XOF",
+              "P2P_SOURCE_PARTY_ID_1": "16665551001",
+              "P2P_DESTINATION_PARTY_ID_1": "16665551002",
+              "FX_SOURCE_PARTY_ID_1": "16665551001",
+              "FX_DESTINATION_PARTY_ID_1": "16665551002",
+              "FXP1_ID": "testfxp",
+              "FX_PAYERDFSP_ID": "testpayer",
+              "FX_PAYEEDFSP_ID": "testpayee",
+              "FX_SOURCE_CURRENCY": "XOF",
+              "FX_TARGET_CURRENCY": "XXX",
+              "FX_SOURCE_AMOUNT": "10",
+            },
+        }
+
+    ingress:
+      enabled: true
+      className: "nginx"
+      hosts:
+        specApi:
+          host: pm4ml-testing-toolkit-specapi.local
+        adminApi:
+          host: pm4ml-testing-toolkit.local
+
+  ml-testing-toolkit-frontend:
+    enabled: true
+    image:
+      repository: mojaloop/ml-testing-toolkit-ui
+      tag: v15.5.0
+    className: "nginx"
+    ingress:
+      enabled: true
+      hosts:
+        ui:
+          host: pm4ml-testing-toolkit.local
+    config:
+      API_BASE_URL: http://pm4ml-testing-toolkit.local
+
+kafka:
+  enabled: true
+  storage:
+    size: 2Gi
+
+keycloak:
+  enabled: true
+
+  extraVolumes: |
+    - name: realm-config
+      # the below should be set to the name of the keycloak realm config map
+      # this has the deployment name on the front but because helm is so horrible
+      # we cant get the deployment name here in a nice way. You have to plug it
+      # in manually. e.g. the below works for a deployment called "pm4ml"
+      configMap:
+        name: {{ $.Release.Name }}-keycloak-realm
+
+  extraVolumeMounts: |
+    - name: realm-config
+      mountPath: "/realm"
+      readOnly: true
+
+  # KEYCLOAK_USER and KEYCLOAK_PASSWORD are for the admin user account
+  extraEnv: |
+    - name: KEYCLOAK_USER
+      value: admin
+    - name: KEYCLOAK_PASSWORD
+      value: admin
+    - name: KEYCLOAK_IMPORT
+      value: /realm/realm.json
+    # the below should be set to the external URL of keycloak
+    - name: KEYCLOAK_FRONTEND_URL
+      value: "https://{{ .Release.Name }}.keycloak.local/auth"
+
+  ingress:
+    # If `true`, an Ingress is created
+    enabled: false
+    # The Service port targeted by the Ingress
+    servicePort: http
+    # Ingress annotations
+    annotations:
+      # kubernetes.io/ingress.class: nginx
+      ## Resolve HTTP 502 error using ingress-nginx:
+      ## See https://www.ibm.com/support/pages/502-error-ingress-keycloak-response
+      # nginx.ingress.kubernetes.io/proxy-buffer-size: 128k
+
+    # Additional Ingress labels
+    # labels: {}
+    # List of rules for the Ingress
+    rules:
+      - # Ingress host
+        host: "{{ .Release.Name }}.keycloak.local"
+        # Paths for the host
+        paths:
+          - /
+    # TLS configuration
+    # tls:
+    #   - hosts:
+    #       - keycloak.example.com
+    #     secretName: ""
+
+    # ingress for console only (/auth/admin)
+    # console:
+    #   # If `true`, an Ingress is created for console path only
+    #   enabled: false
+    #   # Ingress annotations for console ingress only
+    #   # Useful to set nginx.ingress.kubernetes.io/whitelist-source-range particularly
+    #   annotations: {}
+    #   rules:
+    #     -
+    #       # Ingress host
+    #       host: '{{ .Release.Name }}.keycloak.example.com'
+    #       # Paths for the host
+    #       paths:
+    #         - /auth/admin/
+
+  configFiles:
+    realm.json: |
+      {
+        "id": "pm4ml",
+        "realm": "pm4ml",
+        "displayName": "Payment Manager for Mojaloop",
+        "displayNameHtml": "Payment Manager for Mojaloop",
+        "notBefore": 0,
+        "defaultSignatureAlgorithm": "RS256",
+        "revokeRefreshToken": false,
+        "refreshTokenMaxReuse": 0,
+        "accessTokenLifespan": 300,
+        "accessTokenLifespanForImplicitFlow": 900,
+        "ssoSessionIdleTimeout": 1800,
+        "ssoSessionMaxLifespan": 36000,
+        "ssoSessionIdleTimeoutRememberMe": 0,
+        "ssoSessionMaxLifespanRememberMe": 0,
+        "offlineSessionIdleTimeout": 2592000,
+        "offlineSessionMaxLifespanEnabled": false,
+        "offlineSessionMaxLifespan": 5184000,
+        "clientSessionIdleTimeout": 0,
+        "clientSessionMaxLifespan": 0,
+        "clientOfflineSessionIdleTimeout": 0,
+        "clientOfflineSessionMaxLifespan": 0,
+        "accessCodeLifespan": 60,
+        "accessCodeLifespanUserAction": 300,
+        "accessCodeLifespanLogin": 1800,
+        "actionTokenGeneratedByAdminLifespan": 43200,
+        "actionTokenGeneratedByUserLifespan": 300,
+        "enabled": true,
+        "sslRequired": "external",
+        "registrationAllowed": false,
+        "registrationEmailAsUsername": false,
+        "rememberMe": false,
+        "verifyEmail": false,
+        "loginWithEmailAllowed": true,
+        "duplicateEmailsAllowed": false,
+        "resetPasswordAllowed": true,
+        "editUsernameAllowed": false,
+        "bruteForceProtected": true,
+        "permanentLockout": false,
+        "maxFailureWaitSeconds": 900,
+        "minimumQuickLoginWaitSeconds": 60,
+        "waitIncrementSeconds": 60,
+        "quickLoginCheckMilliSeconds": 1000,
+        "maxDeltaTimeSeconds": 43200,
+        "failureFactor": 30,
+        "users": [
+          {
+            "username" : "test",
+            "enabled": true,
+            "totp": false,
+            "emailVerified": false,
+            "firstName": "test",
+            "lastName": "test",
+            "credentials" : [{ "type" : "password", "value" : "test" }],
+            "realmRoles": ["offline_access", "uma_auhtorization"],
+            "clientRoles": {
+              "realm-management": [ "view-users" ]
+            },
+            "requiredActions": [
+            ]
+          },
+          {
+            "username" : "nofirstlastname",
+            "enabled": true,
+            "totp": false,
+            "emailVerified": false,
+            "firstName": "",
+            "lastName": "",
+            "credentials" : [{ "type" : "password", "value" : "test" }],
+            "realmRoles": ["offline_access", "uma_auhtorization"],
+            "clientRoles": {
+              "realm-management": [ "view-users" ]
+            },
+            "requiredActions": [
+            ]
+          },
+          {
+            "username" : "nofirstname",
+            "enabled": true,
+            "totp": false,
+            "emailVerified": false,
+            "firstName": "",
+            "lastName": "last",
+            "credentials" : [{ "type" : "password", "value" : "test" }],
+            "realmRoles": ["offline_access", "uma_auhtorization"],
+            "clientRoles": {
+              "realm-management": [ "view-users" ]
+            },
+            "requiredActions": [
+            ]
+          },
+          {
+            "username" : "nolastname",
+            "enabled": true,
+            "totp": false,
+            "emailVerified": false,
+            "firstName": "first",
+            "lastName": "",
+            "credentials" : [{ "type" : "password", "value" : "test" }],
+            "realmRoles": ["offline_access", "uma_auhtorization"],
+            "clientRoles": {
+              "realm-management": [ "view-users" ]
+            },
+            "requiredActions": [
+            ]
+          }
+        ],
+        "roles": {
+          "realm": [
+            {
+              "id": "eb4f921b-46c3-472f-a36a-7d6e0414b448",
+              "name": "write-all",
+              "composite": false,
+              "clientRole": false,
+              "containerId": "pm4ml",
+              "attributes": {}
+            },
+            {
+              "id": "865b9301-5728-4ad5-a56d-042aa9001473",
+              "name": "read-all",
+              "composite": false,
+              "clientRole": false,
+              "containerId": "pm4ml",
+              "attributes": {}
+            },
+            {
+              "id": "457e45a3-bef9-4698-b627-e310cc2a3a2f",
+              "name": "uma_authorization",
+              "description": "${role_uma_authorization}",
+              "composite": false,
+              "clientRole": false,
+              "containerId": "pm4ml",
+              "attributes": {}
+            },
+            {
+              "id": "68503107-a889-45b8-9627-4b5ce42a405d",
+              "name": "offline_access",
+              "description": "${role_offline-access}",
+              "composite": false,
+              "clientRole": false,
+              "containerId": "pm4ml",
+              "attributes": {}
+            }
+          ],
+          "client": {
+            "pm4ml-customer-ui": [],
+            "realm-management": [
+              {
+                "id": "c8c4d76f-aacd-4ae3-a89a-045d103b6136",
+                "name": "query-realms",
+                "description": "${role_query-realms}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "041288b9-5b4f-4e50-b8d1-9884695c644c",
+                "name": "manage-clients",
+                "description": "${role_manage-clients}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "2ffa8e66-9b6c-4a4f-8b76-faf9ed45754a",
+                "name": "view-identity-providers",
+                "description": "${role_view-identity-providers}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "a71ab402-afa2-49be-ae0a-9c90b4e55aba",
+                "name": "view-users",
+                "description": "${role_view-users}",
+                "composite": true,
+                "composites": {
+                  "client": {
+                    "realm-management": [
+                      "query-users",
+                      "query-groups"
+                    ]
+                  }
+                },
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "d828ef10-22b0-4e8c-9cf7-db3ae6e78cae",
+                "name": "manage-events",
+                "description": "${role_manage-events}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "3f6d0439-9f63-42cd-993d-79d028e39aa7",
+                "name": "realm-admin",
+                "description": "${role_realm-admin}",
+                "composite": true,
+                "composites": {
+                  "client": {
+                    "realm-management": [
+                      "query-realms",
+                      "manage-clients",
+                      "view-identity-providers",
+                      "view-users",
+                      "manage-events",
+                      "query-groups",
+                      "view-events",
+                      "manage-authorization",
+                      "manage-realm",
+                      "view-clients",
+                      "query-clients",
+                      "view-authorization",
+                      "create-client",
+                      "manage-users",
+                      "query-users",
+                      "view-realm",
+                      "impersonation",
+                      "manage-identity-providers"
+                    ]
+                  }
+                },
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "483ae324-8714-468c-a0a7-5ae941700265",
+                "name": "query-groups",
+                "description": "${role_query-groups}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "d60da1ba-71ea-4ef6-83ff-6fc2c8f0c0fa",
+                "name": "view-events",
+                "description": "${role_view-events}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "71680139-60e7-4134-b9da-ca4b33fc63b1",
+                "name": "manage-authorization",
+                "description": "${role_manage-authorization}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "c5f44f2f-eb1f-495f-96b7-e4d547bc9a21",
+                "name": "manage-realm",
+                "description": "${role_manage-realm}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "9dad564c-926f-4586-be7c-d68402dbbdf5",
+                "name": "view-clients",
+                "description": "${role_view-clients}",
+                "composite": true,
+                "composites": {
+                  "client": {
+                    "realm-management": [
+                      "query-clients"
+                    ]
+                  }
+                },
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "8d2b9ac3-e235-4a4a-9a52-a457990ac082",
+                "name": "query-clients",
+                "description": "${role_query-clients}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "ee4dd8da-19d3-404c-8b8e-c69903789e3d",
+                "name": "view-authorization",
+                "description": "${role_view-authorization}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "d7754eab-2f88-4650-b419-03961c87a39d",
+                "name": "create-client",
+                "description": "${role_create-client}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "e3e24ad8-403a-4afd-922d-75772e78ac9e",
+                "name": "manage-users",
+                "description": "${role_manage-users}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "f4aef99f-25f5-4aee-880f-fcab946f39f9",
+                "name": "query-users",
+                "description": "${role_query-users}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "44e26e92-52d2-40a5-a173-b8ae561f065e",
+                "name": "view-realm",
+                "description": "${role_view-realm}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "a0da9dac-c286-40a3-8a81-c5fd2861fcfd",
+                "name": "impersonation",
+                "description": "${role_impersonation}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              },
+              {
+                "id": "2b0ae45c-becf-45e0-be63-916725b8493f",
+                "name": "manage-identity-providers",
+                "description": "${role_manage-identity-providers}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+                "attributes": {}
+              }
+            ],
+            "security-admin-console": [],
+            "admin-cli": [],
+            "account-console": [],
+            "broker": [
+              {
+                "id": "7af5e460-7eb2-4bae-9852-a59977fa5d93",
+                "name": "read-token",
+                "description": "${role_read-token}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "9b46fb1e-e281-4ce7-be76-cc77b73929cc",
+                "attributes": {}
+              }
+            ],
+            "account": [
+              {
+                "id": "1161f028-74cf-477f-924c-dcb1b13b3299",
+                "name": "view-profile",
+                "description": "${role_view-profile}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "d5828b63-66ba-47fc-a55b-490bac640c90",
+                "attributes": {}
+              },
+              {
+                "id": "f758b5d6-0712-401c-93f5-ebe0753f699d",
+                "name": "manage-account-links",
+                "description": "${role_manage-account-links}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "d5828b63-66ba-47fc-a55b-490bac640c90",
+                "attributes": {}
+              },
+              {
+                "id": "bce12ab9-6992-4534-9709-5102767bbddf",
+                "name": "view-applications",
+                "description": "${role_view-applications}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "d5828b63-66ba-47fc-a55b-490bac640c90",
+                "attributes": {}
+              },
+              {
+                "id": "6fb497b7-cf3f-4d0a-a7c2-72460a89c87e",
+                "name": "delete-account",
+                "description": "${role_delete-account}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "d5828b63-66ba-47fc-a55b-490bac640c90",
+                "attributes": {}
+              },
+              {
+                "id": "5606f02e-57eb-401d-bde6-c2f07f210bd6",
+                "name": "view-consent",
+                "description": "${role_view-consent}",
+                "composite": false,
+                "clientRole": true,
+                "containerId": "d5828b63-66ba-47fc-a55b-490bac640c90",
+                "attributes": {}
+              },
+              {
+                "id": "a4a30a88-719e-4b20-9e3f-8ffa1e983471",
+                "name": "manage-account",
+                "description": "${role_manage-account}",
+                "composite": true,
+                "composites": {
+                  "client": {
+                    "account": [
+                      "manage-account-links"
+                    ]
+                  }
+                },
+                "clientRole": true,
+                "containerId": "d5828b63-66ba-47fc-a55b-490bac640c90",
+                "attributes": {}
+              },
+              {
+                "id": "d17b5548-9522-4033-8761-14d91f5c6d43",
+                "name": "manage-consent",
+                "description": "${role_manage-consent}",
+                "composite": true,
+                "composites": {
+                  "client": {
+                    "account": [
+                      "view-consent"
+                    ]
+                  }
+                },
+                "clientRole": true,
+                "containerId": "d5828b63-66ba-47fc-a55b-490bac640c90",
+                "attributes": {}
+              }
+            ]
+          }
+        },
+        "groups": [
+          {
+            "id": "65ba1f94-2f01-4abc-a998-b0c7ad00ee88",
+            "name": "Super Users",
+            "path": "/Super Users",
+            "attributes": {},
+            "realmRoles": [
+              "write-all",
+              "read-all"
+            ],
+            "clientRoles": {},
+            "subGroups": []
+          }
+        ],
+        "defaultRoles": [
+          "read-all",
+          "uma_authorization",
+          "offline_access"
+        ],
+        "requiredCredentials": [
+          "password"
+        ],
+        "otpPolicyType": "totp",
+        "otpPolicyAlgorithm": "HmacSHA1",
+        "otpPolicyInitialCounter": 0,
+        "otpPolicyDigits": 6,
+        "otpPolicyLookAheadWindow": 1,
+        "otpPolicyPeriod": 30,
+        "otpSupportedApplications": [
+          "FreeOTP",
+          "Google Authenticator"
+        ],
+        "webAuthnPolicyRpEntityName": "keycloak",
+        "webAuthnPolicySignatureAlgorithms": [
+          "ES256"
+        ],
+        "webAuthnPolicyRpId": "",
+        "webAuthnPolicyAttestationConveyancePreference": "not specified",
+        "webAuthnPolicyAuthenticatorAttachment": "not specified",
+        "webAuthnPolicyRequireResidentKey": "not specified",
+        "webAuthnPolicyUserVerificationRequirement": "not specified",
+        "webAuthnPolicyCreateTimeout": 0,
+        "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
+        "webAuthnPolicyAcceptableAaguids": [],
+        "webAuthnPolicyPasswordlessRpEntityName": "keycloak",
+        "webAuthnPolicyPasswordlessSignatureAlgorithms": [
+          "ES256"
+        ],
+        "webAuthnPolicyPasswordlessRpId": "",
+        "webAuthnPolicyPasswordlessAttestationConveyancePreference": "not specified",
+        "webAuthnPolicyPasswordlessAuthenticatorAttachment": "not specified",
+        "webAuthnPolicyPasswordlessRequireResidentKey": "not specified",
+        "webAuthnPolicyPasswordlessUserVerificationRequirement": "not specified",
+        "webAuthnPolicyPasswordlessCreateTimeout": 0,
+        "webAuthnPolicyPasswordlessAvoidSameAuthenticatorRegister": false,
+        "webAuthnPolicyPasswordlessAcceptableAaguids": [],
+        "scopeMappings": [
+          {
+            "clientScope": "roles",
+            "roles": [
+              "read-all",
+              "write-all"
+            ]
+          },
+          {
+            "clientScope": "offline_access",
+            "roles": [
+              "offline_access"
+            ]
+          }
+        ],
+        "clientScopeMappings": {
+          "account": [
+            {
+              "client": "account-console",
+              "roles": [
+                "manage-account"
+              ]
+            }
+          ]
+        },
+        "clients": [
+          {
+            "id": "d5828b63-66ba-47fc-a55b-490bac640c90",
+            "clientId": "account",
+            "name": "${client_account}",
+            "rootUrl": "${authBaseUrl}",
+            "baseUrl": "/realms/pm4ml/account/",
+            "surrogateAuthRequired": false,
+            "enabled": true,
+            "alwaysDisplayInConsole": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": "**********",
+            "defaultRoles": [
+              "view-profile",
+              "manage-account"
+            ],
+            "redirectUris": [
+              "/realms/pm4ml/account/*"
+            ],
+            "webOrigins": [],
+            "notBefore": 0,
+            "bearerOnly": false,
+            "consentRequired": false,
+            "standardFlowEnabled": true,
+            "implicitFlowEnabled": false,
+            "directAccessGrantsEnabled": false,
+            "serviceAccountsEnabled": false,
+            "publicClient": false,
+            "frontchannelLogout": false,
+            "protocol": "openid-connect",
+            "attributes": {},
+            "authenticationFlowBindingOverrides": {},
+            "fullScopeAllowed": false,
+            "nodeReRegistrationTimeout": 0,
+            "defaultClientScopes": [
+              "web-origins",
+              "role_list",
+              "profile",
+              "roles",
+              "email"
+            ],
+            "optionalClientScopes": [
+              "address",
+              "phone",
+              "offline_access",
+              "microprofile-jwt"
+            ]
+          },
+          {
+            "id": "6f7911df-28fa-43ad-adf5-f194409e938e",
+            "clientId": "account-console",
+            "name": "${client_account-console}",
+            "rootUrl": "${authBaseUrl}",
+            "baseUrl": "/realms/pm4ml/account/",
+            "surrogateAuthRequired": false,
+            "enabled": true,
+            "alwaysDisplayInConsole": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": "**********",
+            "redirectUris": [
+              "/realms/pm4ml/account/*"
+            ],
+            "webOrigins": [],
+            "notBefore": 0,
+            "bearerOnly": false,
+            "consentRequired": false,
+            "standardFlowEnabled": true,
+            "implicitFlowEnabled": false,
+            "directAccessGrantsEnabled": false,
+            "serviceAccountsEnabled": false,
+            "publicClient": true,
+            "frontchannelLogout": false,
+            "protocol": "openid-connect",
+            "attributes": {
+              "pkce.code.challenge.method": "S256"
+            },
+            "authenticationFlowBindingOverrides": {},
+            "fullScopeAllowed": false,
+            "nodeReRegistrationTimeout": 0,
+            "protocolMappers": [
+              {
+                "id": "84fe8099-7dba-43a4-9a0d-aeeb752f7931",
+                "name": "audience resolve",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-resolve-mapper",
+                "consentRequired": false,
+                "config": {}
+              }
+            ],
+            "defaultClientScopes": [
+              "web-origins",
+              "role_list",
+              "profile",
+              "roles",
+              "email"
+            ],
+            "optionalClientScopes": [
+              "address",
+              "phone",
+              "offline_access",
+              "microprofile-jwt"
+            ]
+          },
+          {
+            "id": "d8d7bca5-f2a2-423a-b8fa-98b4b633451e",
+            "clientId": "admin-cli",
+            "name": "${client_admin-cli}",
+            "surrogateAuthRequired": false,
+            "enabled": true,
+            "alwaysDisplayInConsole": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": "**********",
+            "redirectUris": [],
+            "webOrigins": [],
+            "notBefore": 0,
+            "bearerOnly": false,
+            "consentRequired": false,
+            "standardFlowEnabled": false,
+            "implicitFlowEnabled": false,
+            "directAccessGrantsEnabled": true,
+            "serviceAccountsEnabled": false,
+            "publicClient": true,
+            "frontchannelLogout": false,
+            "protocol": "openid-connect",
+            "attributes": {},
+            "authenticationFlowBindingOverrides": {},
+            "fullScopeAllowed": false,
+            "nodeReRegistrationTimeout": 0,
+            "defaultClientScopes": [
+              "web-origins",
+              "role_list",
+              "profile",
+              "roles",
+              "email"
+            ],
+            "optionalClientScopes": [
+              "address",
+              "phone",
+              "offline_access",
+              "microprofile-jwt"
+            ]
+          },
+          {
+            "id": "9b46fb1e-e281-4ce7-be76-cc77b73929cc",
+            "clientId": "broker",
+            "name": "${client_broker}",
+            "surrogateAuthRequired": false,
+            "enabled": true,
+            "alwaysDisplayInConsole": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": "**********",
+            "redirectUris": [],
+            "webOrigins": [],
+            "notBefore": 0,
+            "bearerOnly": false,
+            "consentRequired": false,
+            "standardFlowEnabled": true,
+            "implicitFlowEnabled": false,
+            "directAccessGrantsEnabled": false,
+            "serviceAccountsEnabled": false,
+            "publicClient": false,
+            "frontchannelLogout": false,
+            "protocol": "openid-connect",
+            "attributes": {},
+            "authenticationFlowBindingOverrides": {},
+            "fullScopeAllowed": false,
+            "nodeReRegistrationTimeout": 0,
+            "defaultClientScopes": [
+              "web-origins",
+              "role_list",
+              "profile",
+              "roles",
+              "email"
+            ],
+            "optionalClientScopes": [
+              "address",
+              "phone",
+              "offline_access",
+              "microprofile-jwt"
+            ]
+          },
+          {
+            "id": "152a25c5-bc13-4dba-9739-43ee05d76970",
+            "clientId": "pm4ml-customer-ui",
+            "rootUrl": {{ .Values.frontendRootUrl | quote }},
+            "baseUrl": {{ .Values.frontendBaseUrl | quote }},
+            "surrogateAuthRequired": false,
+            "enabled": true,
+            "alwaysDisplayInConsole": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": {{ .Values.experienceApiClientSecret | quote }},
+            "redirectUris": [
+            {{- range $idx, $val := .Values.frontendRedirectUris }}
+              {{if $idx}},{{end}}{{ $val | quote }}
+            {{ end }}
+            ],
+            "webOrigins": [
+            {{- range $idx, $val := .Values.frontendWebOrigins }}
+              {{if $idx}},{{end}}{{ $val | quote }}
+            {{ end }}
+            ],
+            "notBefore": 0,
+            "bearerOnly": false,
+            "consentRequired": false,
+            "standardFlowEnabled": true,
+            "implicitFlowEnabled": false,
+            "directAccessGrantsEnabled": true,
+            "serviceAccountsEnabled": false,
+            "publicClient": false,
+            "frontchannelLogout": false,
+            "protocol": "openid-connect",
+            "attributes": {
+              "saml.assertion.signature": "false",
+              "saml.force.post.binding": "false",
+              "saml.multivalued.roles": "false",
+              "saml.encrypt": "false",
+              "backchannel.logout.revoke.offline.tokens": "false",
+              "saml.server.signature": "false",
+              "saml.server.signature.keyinfo.ext": "false",
+              "exclude.session.state.from.auth.response": "false",
+              "backchannel.logout.session.required": "true",
+              "client_credentials.use_refresh_token": "false",
+              "saml_force_name_id_format": "false",
+              "saml.client.signature": "false",
+              "tls.client.certificate.bound.access.tokens": "false",
+              "saml.authnstatement": "false",
+              "display.on.consent.screen": "false",
+              "saml.onetimeuse.condition": "false"
+            },
+            "authenticationFlowBindingOverrides": {},
+            "fullScopeAllowed": true,
+            "nodeReRegistrationTimeout": -1,
+            "defaultClientScopes": [
+              "web-origins",
+              "role_list",
+              "profile",
+              "roles",
+              "email"
+            ],
+            "optionalClientScopes": [
+              "address",
+              "phone",
+              "offline_access",
+              "microprofile-jwt"
+            ]
+          },
+          {
+            "id": "67a3b6fc-64a5-4f64-81c8-1201319f0365",
+            "clientId": "realm-management",
+            "name": "${client_realm-management}",
+            "surrogateAuthRequired": false,
+            "enabled": true,
+            "alwaysDisplayInConsole": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": "**********",
+            "redirectUris": [],
+            "webOrigins": [],
+            "notBefore": 0,
+            "bearerOnly": true,
+            "consentRequired": false,
+            "standardFlowEnabled": true,
+            "implicitFlowEnabled": false,
+            "directAccessGrantsEnabled": false,
+            "serviceAccountsEnabled": false,
+            "publicClient": false,
+            "frontchannelLogout": false,
+            "protocol": "openid-connect",
+            "attributes": {},
+            "authenticationFlowBindingOverrides": {},
+            "fullScopeAllowed": false,
+            "nodeReRegistrationTimeout": 0,
+            "defaultClientScopes": [
+              "web-origins",
+              "role_list",
+              "profile",
+              "roles",
+              "email"
+            ],
+            "optionalClientScopes": [
+              "address",
+              "phone",
+              "offline_access",
+              "microprofile-jwt"
+            ]
+          },
+          {
+            "id": "48c863b4-54b8-4173-b1c8-1d0a9db57de9",
+            "clientId": "security-admin-console",
+            "name": "${client_security-admin-console}",
+            "rootUrl": "${authAdminUrl}",
+            "baseUrl": "/admin/pm4ml/console/",
+            "surrogateAuthRequired": false,
+            "enabled": true,
+            "alwaysDisplayInConsole": false,
+            "clientAuthenticatorType": "client-secret",
+            "secret": "**********",
+            "redirectUris": [
+              "/admin/pm4ml/console/*"
+            ],
+            "webOrigins": [
+              "+"
+            ],
+            "notBefore": 0,
+            "bearerOnly": false,
+            "consentRequired": false,
+            "standardFlowEnabled": true,
+            "implicitFlowEnabled": false,
+            "directAccessGrantsEnabled": false,
+            "serviceAccountsEnabled": false,
+            "publicClient": true,
+            "frontchannelLogout": false,
+            "protocol": "openid-connect",
+            "attributes": {
+              "pkce.code.challenge.method": "S256"
+            },
+            "authenticationFlowBindingOverrides": {},
+            "fullScopeAllowed": false,
+            "nodeReRegistrationTimeout": 0,
+            "protocolMappers": [
+              {
+                "id": "5d0fd882-404d-4b38-b18b-879fc1a58a8b",
+                "name": "locale",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "locale",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "locale",
+                  "jsonType.label": "String"
+                }
+              }
+            ],
+            "defaultClientScopes": [
+              "web-origins",
+              "role_list",
+              "profile",
+              "roles",
+              "email"
+            ],
+            "optionalClientScopes": [
+              "address",
+              "phone",
+              "offline_access",
+              "microprofile-jwt"
+            ]
+          }
+        ],
+        "clientScopes": [
+          {
+            "id": "e300c074-e2ec-45b9-8f89-351d186208d5",
+            "name": "web-origins",
+            "description": "OpenID Connect scope for add allowed web origins to the access token",
+            "protocol": "openid-connect",
+            "attributes": {
+              "include.in.token.scope": "false",
+              "display.on.consent.screen": "false",
+              "consent.screen.text": ""
+            },
+            "protocolMappers": [
+              {
+                "id": "b8525936-6fa9-45e7-bebd-52be074afab9",
+                "name": "allowed web origins",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-allowed-origins-mapper",
+                "consentRequired": false,
+                "config": {}
+              }
+            ]
+          },
+          {
+            "id": "977d7448-6dc8-428c-9ac5-6d964361fb40",
+            "name": "roles",
+            "description": "OpenID Connect scope for add user roles to the access token",
+            "protocol": "openid-connect",
+            "attributes": {
+              "include.in.token.scope": "true",
+              "display.on.consent.screen": "true",
+              "consent.screen.text": "${rolesScopeConsentText}"
+            },
+            "protocolMappers": [
+              {
+                "id": "c05f0c47-e6d4-4b7b-a925-7fc3fbbacf68",
+                "name": "client roles",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-client-role-mapper",
+                "consentRequired": false,
+                "config": {
+                  "user.attribute": "foo",
+                  "access.token.claim": "true",
+                  "claim.name": "resource_access.${client_id}.roles",
+                  "jsonType.label": "String",
+                  "multivalued": "true"
+                }
+              },
+              {
+                "id": "3fe90e67-982b-4cfb-bcd0-4f3cc37a07d5",
+                "name": "audience resolve",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-resolve-mapper",
+                "consentRequired": false,
+                "config": {}
+              },
+              {
+                "id": "b150f242-d81d-4b70-8d9a-57f6080c7f51",
+                "name": "realm roles",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-realm-role-mapper",
+                "consentRequired": false,
+                "config": {
+                  "multivalued": "true",
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "foo",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "realm_access.roles",
+                  "jsonType.label": "String"
+                }
+              }
+            ]
+          },
+          {
+            "id": "938e8879-2688-4790-b4d3-fabb1f40f048",
+            "name": "role_list",
+            "description": "SAML role list",
+            "protocol": "saml",
+            "attributes": {
+              "consent.screen.text": "${samlRoleListScopeConsentText}",
+              "display.on.consent.screen": "true"
+            },
+            "protocolMappers": [
+              {
+                "id": "3184641a-cc91-48a7-87b1-16eb1fbebfc3",
+                "name": "role list",
+                "protocol": "saml",
+                "protocolMapper": "saml-role-list-mapper",
+                "consentRequired": false,
+                "config": {
+                  "single": "false",
+                  "attribute.nameformat": "Basic",
+                  "attribute.name": "Role"
+                }
+              }
+            ]
+          },
+          {
+            "id": "6d271619-b674-4705-b3fc-d233d637502b",
+            "name": "profile",
+            "description": "OpenID Connect built-in scope: profile",
+            "protocol": "openid-connect",
+            "attributes": {
+              "include.in.token.scope": "true",
+              "display.on.consent.screen": "true",
+              "consent.screen.text": "${profileScopeConsentText}"
+            },
+            "protocolMappers": [
+              {
+                "id": "82cfa3e4-3688-4980-bfcd-8dc88fe3a418",
+                "name": "profile",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "profile",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "profile",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "2def807b-a552-420a-b6ec-d3a12ea68fc2",
+                "name": "gender",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "gender",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "gender",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "486fe8ee-e8dd-463a-8b6c-d1b70af0a8b9",
+                "name": "full name",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-full-name-mapper",
+                "consentRequired": false,
+                "config": {
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "userinfo.token.claim": "true"
+                }
+              },
+              {
+                "id": "6e0ce844-f28f-4a83-a645-df8cd306ac03",
+                "name": "birthdate",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "birthdate",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "birthdate",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "e5be4176-ddfb-4a44-9f37-7ecc57480b40",
+                "name": "updated at",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "updatedAt",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "updated_at",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "f855c422-689b-4cf1-b0dc-f30994d2b715",
+                "name": "picture",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "picture",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "picture",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "4494ab4b-6276-4e07-afd4-1fc7ba92576f",
+                "name": "zoneinfo",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "zoneinfo",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "zoneinfo",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "85393263-4ad7-4d9d-876d-479dc455c7d6",
+                "name": "given name",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "firstName",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "given_name",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "4f06428b-bd4c-448d-9a1c-ac9659591917",
+                "name": "middle name",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "middleName",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "middle_name",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "75cadbd8-010c-4253-a816-a8b0dff864a3",
+                "name": "username",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "username",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "preferred_username",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "f513b047-56ef-4e3f-b4bd-2126eaf91ac7",
+                "name": "nickname",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "nickname",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "nickname",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "42cf502f-51b9-4914-9984-0544fa43ac8a",
+                "name": "locale",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "locale",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "locale",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "402fa5b3-2ddf-445e-9b50-bc26a2e8c355",
+                "name": "family name",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "lastName",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "family_name",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "df507134-76c1-486e-be7a-98dea0eb827a",
+                "name": "website",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "website",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "website",
+                  "jsonType.label": "String"
+                }
+              }
+            ]
+          },
+          {
+            "id": "73bc7545-ec2a-420b-90dc-a78e90c6d3bd",
+            "name": "phone",
+            "description": "OpenID Connect built-in scope: phone",
+            "protocol": "openid-connect",
+            "attributes": {
+              "include.in.token.scope": "true",
+              "display.on.consent.screen": "true",
+              "consent.screen.text": "${phoneScopeConsentText}"
+            },
+            "protocolMappers": [
+              {
+                "id": "2c6e6cb2-e78d-4d38-aa28-d90a845824c2",
+                "name": "phone number verified",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "phoneNumberVerified",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "phone_number_verified",
+                  "jsonType.label": "boolean"
+                }
+              },
+              {
+                "id": "020d4b9c-79d7-4c66-8a18-916ed2902e5f",
+                "name": "phone number",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "phoneNumber",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "phone_number",
+                  "jsonType.label": "String"
+                }
+              }
+            ]
+          },
+          {
+            "id": "c87355dc-5a3a-4529-a965-bd8571062559",
+            "name": "offline_access",
+            "description": "OpenID Connect built-in scope: offline_access",
+            "protocol": "openid-connect",
+            "attributes": {
+              "consent.screen.text": "${offlineAccessScopeConsentText}",
+              "display.on.consent.screen": "true"
+            }
+          },
+          {
+            "id": "e25f47fe-6d1e-47c1-bd90-4829cf66bb7d",
+            "name": "microprofile-jwt",
+            "description": "Microprofile - JWT built-in scope",
+            "protocol": "openid-connect",
+            "attributes": {
+              "include.in.token.scope": "true",
+              "display.on.consent.screen": "false"
+            },
+            "protocolMappers": [
+              {
+                "id": "30d6519c-f797-409e-aa8c-c6946d7ef84b",
+                "name": "upn",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "username",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "upn",
+                  "jsonType.label": "String"
+                }
+              },
+              {
+                "id": "09cd5151-7482-4b23-b0d1-f36c9f530216",
+                "name": "groups",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-realm-role-mapper",
+                "consentRequired": false,
+                "config": {
+                  "multivalued": "true",
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "foo",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "groups",
+                  "jsonType.label": "String"
+                }
+              }
+            ]
+          },
+          {
+            "id": "561aebfc-ccba-4754-b4f8-af2b7f0ab3fd",
+            "name": "email",
+            "description": "OpenID Connect built-in scope: email",
+            "protocol": "openid-connect",
+            "attributes": {
+              "include.in.token.scope": "true",
+              "display.on.consent.screen": "true",
+              "consent.screen.text": "${emailScopeConsentText}"
+            },
+            "protocolMappers": [
+              {
+                "id": "40f7e54f-798e-49de-9c0e-74f631cf2499",
+                "name": "email verified",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "emailVerified",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "email_verified",
+                  "jsonType.label": "boolean"
+                }
+              },
+              {
+                "id": "a59d9560-d9b2-423d-9f9a-26a124f435a7",
+                "name": "email",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-property-mapper",
+                "consentRequired": false,
+                "config": {
+                  "userinfo.token.claim": "true",
+                  "user.attribute": "email",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "claim.name": "email",
+                  "jsonType.label": "String"
+                }
+              }
+            ]
+          },
+          {
+            "id": "b88ca32c-29e3-408e-a72d-6a81e36723e1",
+            "name": "address",
+            "description": "OpenID Connect built-in scope: address",
+            "protocol": "openid-connect",
+            "attributes": {
+              "include.in.token.scope": "true",
+              "display.on.consent.screen": "true",
+              "consent.screen.text": "${addressScopeConsentText}"
+            },
+            "protocolMappers": [
+              {
+                "id": "298f6e52-8478-4078-9994-cee1b52a5008",
+                "name": "address",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-address-mapper",
+                "consentRequired": false,
+                "config": {
+                  "user.attribute.formatted": "formatted",
+                  "user.attribute.country": "country",
+                  "user.attribute.postal_code": "postal_code",
+                  "userinfo.token.claim": "true",
+                  "user.attribute.street": "street",
+                  "id.token.claim": "true",
+                  "user.attribute.region": "region",
+                  "access.token.claim": "true",
+                  "user.attribute.locality": "locality"
+                }
+              }
+            ]
+          }
+        ],
+        "defaultDefaultClientScopes": [
+          "email",
+          "profile",
+          "roles",
+          "web-origins"
+        ],
+        "defaultOptionalClientScopes": [
+          "phone",
+          "address",
+          "offline_access",
+          "microprofile-jwt"
+        ],
+        "browserSecurityHeaders": {
+          "contentSecurityPolicyReportOnly": "",
+          "xContentTypeOptions": "nosniff",
+          "xRobotsTag": "none",
+          "xFrameOptions": "SAMEORIGIN",
+          "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+          "xXSSProtection": "1; mode=block",
+          "strictTransportSecurity": "max-age=31536000; includeSubDomains"
+        },
+        "smtpServer": {},
+        "loginTheme": "keycloak",
+        "accountTheme": "keycloak",
+        "adminTheme": "keycloak",
+        "emailTheme": "keycloak",
+        "eventsEnabled": false,
+        "eventsListeners": [
+          "jboss-logging"
+        ],
+        "enabledEventTypes": [],
+        "adminEventsEnabled": false,
+        "adminEventsDetailsEnabled": false,
+        "identityProviders": [],
+        "identityProviderMappers": [],
+        "components": {
+          "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
+            {
+              "id": "29d1f1eb-1c79-47ce-83a0-de47a8bd33fc",
+              "name": "Allowed Protocol Mapper Types",
+              "providerId": "allowed-protocol-mappers",
+              "subType": "authenticated",
+              "subComponents": {},
+              "config": {
+                "allowed-protocol-mapper-types": [
+                  "saml-role-list-mapper",
+                  "oidc-sha256-pairwise-sub-mapper",
+                  "saml-user-attribute-mapper",
+                  "saml-user-property-mapper",
+                  "oidc-address-mapper",
+                  "oidc-usermodel-attribute-mapper",
+                  "oidc-full-name-mapper",
+                  "oidc-usermodel-property-mapper"
+                ]
+              }
+            },
+            {
+              "id": "d43dd62d-f92f-406d-a56f-10a8821d7f40",
+              "name": "Allowed Protocol Mapper Types",
+              "providerId": "allowed-protocol-mappers",
+              "subType": "anonymous",
+              "subComponents": {},
+              "config": {
+                "allowed-protocol-mapper-types": [
+                  "oidc-usermodel-attribute-mapper",
+                  "saml-role-list-mapper",
+                  "saml-user-property-mapper",
+                  "oidc-sha256-pairwise-sub-mapper",
+                  "oidc-address-mapper",
+                  "saml-user-attribute-mapper",
+                  "oidc-usermodel-property-mapper",
+                  "oidc-full-name-mapper"
+                ]
+              }
+            },
+            {
+              "id": "1f8d6043-3292-4d24-aac6-90ac4a9976e0",
+              "name": "Max Clients Limit",
+              "providerId": "max-clients",
+              "subType": "anonymous",
+              "subComponents": {},
+              "config": {
+                "max-clients": [
+                  "200"
+                ]
+              }
+            },
+            {
+              "id": "2ee0fcb5-9942-4371-8dae-7fdc7139d327",
+              "name": "Consent Required",
+              "providerId": "consent-required",
+              "subType": "anonymous",
+              "subComponents": {},
+              "config": {}
+            },
+            {
+              "id": "14c04c95-c3ef-4024-b4e3-2b4a38c8b33d",
+              "name": "Allowed Client Scopes",
+              "providerId": "allowed-client-templates",
+              "subType": "authenticated",
+              "subComponents": {},
+              "config": {
+                "allow-default-scopes": [
+                  "true"
+                ]
+              }
+            },
+            {
+              "id": "0f443aa2-80ff-411b-8dc8-71f0ddd1090d",
+              "name": "Trusted Hosts",
+              "providerId": "trusted-hosts",
+              "subType": "anonymous",
+              "subComponents": {},
+              "config": {
+                "host-sending-registration-request-must-match": [
+                  "true"
+                ],
+                "client-uris-must-match": [
+                  "true"
+                ]
+              }
+            },
+            {
+              "id": "cb8e04a3-3a98-430c-baef-4d807596bedf",
+              "name": "Allowed Client Scopes",
+              "providerId": "allowed-client-templates",
+              "subType": "anonymous",
+              "subComponents": {},
+              "config": {
+                "allow-default-scopes": [
+                  "true"
+                ]
+              }
+            },
+            {
+              "id": "b3fd3084-98e5-484c-997a-f25b3d305511",
+              "name": "Full Scope Disabled",
+              "providerId": "scope",
+              "subType": "anonymous",
+              "subComponents": {},
+              "config": {}
+            }
+          ],
+          "org.keycloak.keys.KeyProvider": [
+            {
+              "id": "3d435c5c-817c-4980-a7b4-dba0db7e716b",
+              "name": "rsa-generated",
+              "providerId": "rsa-generated",
+              "subComponents": {},
+              "config": {
+                "priority": [
+                  "100"
+                ]
+              }
+            },
+            {
+              "id": "cda2ca5e-3579-488a-91a1-810d9e88c919",
+              "name": "aes-generated",
+              "providerId": "aes-generated",
+              "subComponents": {},
+              "config": {
+                "priority": [
+                  "100"
+                ]
+              }
+            },
+            {
+              "id": "628a6954-5a7c-4802-91ec-122d8e43ec9d",
+              "name": "hmac-generated",
+              "providerId": "hmac-generated",
+              "subComponents": {},
+              "config": {
+                "priority": [
+                  "100"
+                ],
+                "algorithm": [
+                  "HS256"
+                ]
+              }
+            }
+          ]
+        },
+        "internationalizationEnabled": false,
+        "supportedLocales": [
+          ""
+        ],
+        "authenticationFlows": [
+          {
+            "id": "f80c3b4c-5075-41a6-be8e-495d76dcb719",
+            "alias": "Account verification options",
+            "description": "Method with which to verity the existing account",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "idp-email-verification",
+                "requirement": "ALTERNATIVE",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "ALTERNATIVE",
+                "priority": 20,
+                "flowAlias": "Verify Existing Account by Re-authentication",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "4abdd0f4-110d-4e45-b8b0-bdac48407962",
+            "alias": "Authentication Options",
+            "description": "Authentication options.",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "basic-auth",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "basic-auth-otp",
+                "requirement": "DISABLED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "auth-spnego",
+                "requirement": "DISABLED",
+                "priority": 30,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "0cac7da0-09c1-498c-92c8-1875b895f03e",
+            "alias": "Browser - Conditional OTP",
+            "description": "Flow to determine if the OTP is required for the authentication",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "conditional-user-configured",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "auth-otp-form",
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "7c181072-efde-418e-8097-93a09cc8e70e",
+            "alias": "Direct Grant - Conditional OTP",
+            "description": "Flow to determine if the OTP is required for the authentication",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "conditional-user-configured",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "direct-grant-validate-otp",
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "316bc743-a832-4558-b97b-753f4f72b05c",
+            "alias": "First broker login - Conditional OTP",
+            "description": "Flow to determine if the OTP is required for the authentication",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "conditional-user-configured",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "auth-otp-form",
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "0bf7af51-3195-4102-8c97-60afa0952403",
+            "alias": "Handle Existing Account",
+            "description": "Handle what to do if there is existing account with same email/username like authenticated identity provider",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "idp-confirm-link",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "flowAlias": "Account verification options",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "7bbb31ae-f6db-4e74-945f-1b2698c4c90b",
+            "alias": "Reset - Conditional OTP",
+            "description": "Flow to determine if the OTP should be reset or not. Set to REQUIRED to force.",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "conditional-user-configured",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "reset-otp",
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "7521bafd-d634-4547-8d66-18cdd1d485af",
+            "alias": "User creation or linking",
+            "description": "Flow for the existing/non-existing user alternatives",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticatorConfig": "create unique user config",
+                "authenticator": "idp-create-user-if-unique",
+                "requirement": "ALTERNATIVE",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "ALTERNATIVE",
+                "priority": 20,
+                "flowAlias": "Handle Existing Account",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "f69c3e31-2331-40dd-b74e-c581cd8ed5aa",
+            "alias": "Verify Existing Account by Re-authentication",
+            "description": "Reauthentication of existing account",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "idp-username-password-form",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "CONDITIONAL",
+                "priority": 20,
+                "flowAlias": "First broker login - Conditional OTP",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "85b343f3-53fa-4eb1-a851-ca2411008760",
+            "alias": "browser",
+            "description": "browser based authentication",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "auth-cookie",
+                "requirement": "ALTERNATIVE",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "auth-spnego",
+                "requirement": "DISABLED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "identity-provider-redirector",
+                "requirement": "ALTERNATIVE",
+                "priority": 25,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "ALTERNATIVE",
+                "priority": 30,
+                "flowAlias": "forms",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "f558e148-9466-44ea-bc11-5640ac2dae54",
+            "alias": "clients",
+            "description": "Base authentication for clients",
+            "providerId": "client-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "client-secret",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "client-jwt",
+                "requirement": "DISABLED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "client-secret-jwt",
+                "requirement": "DISABLED",
+                "priority": 30,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "client-x509",
+                "requirement": "DISABLED",
+                "priority": 40,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "82a5204b-58cf-4d8e-ac16-57d5bf50dcef",
+            "alias": "direct grant",
+            "description": "OpenID Connect Resource Owner Grant",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "direct-grant-validate-username",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "direct-grant-validate-password",
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "CONDITIONAL",
+                "priority": 30,
+                "flowAlias": "Direct Grant - Conditional OTP",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "4206ab88-340e-404c-b197-5e49ff02bdaf",
+            "alias": "docker auth",
+            "description": "Used by Docker clients to authenticate against the IDP",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "docker-http-basic-authenticator",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "162fa6f5-0ff9-4e65-b099-ccb8ba2c68f0",
+            "alias": "first broker login",
+            "description": "Actions taken after first broker login with identity provider account, which is not yet linked to any Keycloak account",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticatorConfig": "review profile config",
+                "authenticator": "idp-review-profile",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "flowAlias": "User creation or linking",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "4c34358e-a246-4a57-a238-31357696912e",
+            "alias": "forms",
+            "description": "Username, password, otp and other auth forms.",
+            "providerId": "basic-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "auth-username-password-form",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "CONDITIONAL",
+                "priority": 20,
+                "flowAlias": "Browser - Conditional OTP",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "d4216182-3f29-4950-839d-144996d24e12",
+            "alias": "http challenge",
+            "description": "An authentication flow based on challenge-response HTTP Authentication Schemes",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "no-cookie-redirect",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "flowAlias": "Authentication Options",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "2699fb19-a06d-4a3f-84d0-25ffb329cae4",
+            "alias": "registration",
+            "description": "registration flow",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "registration-page-form",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "flowAlias": "registration form",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "7be44f9a-d7f5-4536-a52f-bc1a4f366f1e",
+            "alias": "registration form",
+            "description": "registration form",
+            "providerId": "form-flow",
+            "topLevel": false,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "registration-user-creation",
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "registration-profile-action",
+                "requirement": "REQUIRED",
+                "priority": 40,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "registration-password-action",
+                "requirement": "REQUIRED",
+                "priority": 50,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "registration-recaptcha-action",
+                "requirement": "DISABLED",
+                "priority": 60,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          },
+          {
+            "id": "beb1e5ca-9ed7-4aa2-a2c8-b497d287fc6f",
+            "alias": "reset credentials",
+            "description": "Reset credentials for a user if they forgot their password or something",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "reset-credentials-choose-user",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "reset-credential-email",
+                "requirement": "REQUIRED",
+                "priority": 20,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "authenticator": "reset-password",
+                "requirement": "REQUIRED",
+                "priority": 30,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              },
+              {
+                "requirement": "CONDITIONAL",
+                "priority": 40,
+                "flowAlias": "Reset - Conditional OTP",
+                "userSetupAllowed": false,
+                "autheticatorFlow": true
+              }
+            ]
+          },
+          {
+            "id": "7e7188e9-6c6d-4bbc-8156-0a56edf4f0dc",
+            "alias": "saml ecp",
+            "description": "SAML ECP Profile Authentication Flow",
+            "providerId": "basic-flow",
+            "topLevel": true,
+            "builtIn": true,
+            "authenticationExecutions": [
+              {
+                "authenticator": "http-basic-authenticator",
+                "requirement": "REQUIRED",
+                "priority": 10,
+                "userSetupAllowed": false,
+                "autheticatorFlow": false
+              }
+            ]
+          }
+        ],
+        "authenticatorConfig": [
+          {
+            "id": "623bf161-3154-468d-ae5c-bd4b93317ecc",
+            "alias": "create unique user config",
+            "config": {
+              "require.password.update.after.registration": "false"
+            }
+          },
+          {
+            "id": "601b3382-ce1f-46d8-b952-b7ba0fcde7e4",
+            "alias": "review profile config",
+            "config": {
+              "update.profile.on.first.login": "missing"
+            }
+          }
+        ],
+        "requiredActions": [
+          {
+            "alias": "CONFIGURE_TOTP",
+            "name": "Configure OTP",
+            "providerId": "CONFIGURE_TOTP",
+            "enabled": true,
+            "defaultAction": true,
+            "priority": 10,
+            "config": {}
+          },
+          {
+            "alias": "terms_and_conditions",
+            "name": "Terms and Conditions",
+            "providerId": "terms_and_conditions",
+            "enabled": true,
+            "defaultAction": false,
+            "priority": 20,
+            "config": {}
+          },
+          {
+            "alias": "UPDATE_PASSWORD",
+            "name": "Update Password",
+            "providerId": "UPDATE_PASSWORD",
+            "enabled": true,
+            "defaultAction": true,
+            "priority": 30,
+            "config": {}
+          },
+          {
+            "alias": "UPDATE_PROFILE",
+            "name": "Update Profile",
+            "providerId": "UPDATE_PROFILE",
+            "enabled": true,
+            "defaultAction": false,
+            "priority": 40,
+            "config": {}
+          },
+          {
+            "alias": "VERIFY_EMAIL",
+            "name": "Verify Email",
+            "providerId": "VERIFY_EMAIL",
+            "enabled": true,
+            "defaultAction": false,
+            "priority": 50,
+            "config": {}
+          },
+          {
+            "alias": "delete_account",
+            "name": "Delete Account",
+            "providerId": "delete_account",
+            "enabled": false,
+            "defaultAction": false,
+            "priority": 60,
+            "config": {}
+          },
+          {
+            "alias": "update_user_locale",
+            "name": "Update User Locale",
+            "providerId": "update_user_locale",
+            "enabled": true,
+            "defaultAction": false,
+            "priority": 1000,
+            "config": {}
+          },
+          {
+            "alias": "webauthn-register-passwordless",
+            "name": "Webauthn Register Passwordless",
+            "providerId": "webauthn-register-passwordless",
+            "enabled": true,
+            "defaultAction": false,
+            "priority": 1001,
+            "config": {}
+          },
+          {
+            "alias": "webauthn-register",
+            "name": "Webauthn Register",
+            "providerId": "webauthn-register",
+            "enabled": true,
+            "defaultAction": false,
+            "priority": 1002,
+            "config": {}
+          }
+        ],
+        "browserFlow": "browser",
+        "registrationFlow": "registration",
+        "directGrantFlow": "direct grant",
+        "resetCredentialsFlow": "reset credentials",
+        "clientAuthenticationFlow": "clients",
+        "dockerAuthenticationFlow": "docker auth",
+        "attributes": {
+          "clientOfflineSessionMaxLifespan": "0",
+          "clientSessionIdleTimeout": "0",
+          "clientSessionMaxLifespan": "0",
+          "clientOfflineSessionIdleTimeout": "0"
+        },
+        "keycloakVersion": "10.3.0",
+        "userManagedAccessAllowed": false
+      }
+
+haproxy:
+  enabled: false
+  certificates:
+    secrets:
+      enabled: true
+    certManager:
+      enabled: false
+      certificate:
+        name: "haproxy-tls"
+        secretName: "haproxy-tls"
+        dnsNames:
+          - "portal.example.com"
+          - "dfsp-vault.mojalab.example.com"
+          - "dfsp-mcc.mojalab.example.com"
+  haproxy:
+    config: |
+      # HAProxy Configuration for Mojaloop Payment Manager
+      # This configuration replaces all main ingress resources in the project
+      # Supports multiple environments: microk8s, minikube, qa, production
+      # Note: Ensure that the certificate file is correctly mounted at /etc/ssl/certs/haproxy.pem
+      # Note: All charts are not supported. Add haproxy rules for other services if you need them
+
+      # Global section
+      global
+        maxconn 10000
+        log stdout format raw local0 info
+        chroot /var/lib/haproxy
+        stats socket /var/lib/haproxy/stats mode 600 level admin
+        stats timeout 2m
+        user haproxy
+        group haproxy
+        daemon
+        ssl-default-bind-ciphers EECDH+AESGCM:EDH+AESGCM
+        ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+        ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11 no-tls-tickets
+        ssl-default-server-ciphers EECDH+AESGCM:EDH+AESGCM
+        ssl-default-server-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+        ssl-default-server-options no-sslv3 no-tlsv10 no-tlsv11
+
+      # Defaults section
+      defaults
+        log global
+        mode http
+        option dontlognull
+        option http-server-close
+        option redispatch
+        retries 3
+        timeout http-request 10s
+        timeout queue 1m
+        timeout connect 10s
+        timeout client 1m
+        timeout server 1m
+        timeout http-keep-alive 10s
+        timeout check 10s
+        maxconn 1000
+
+      # HTTP Frontend - Redirect to HTTPS
+      frontend http_frontend
+        bind *:8080
+        mode http
+        default_backend mpm_backend
+        # HTTP to HTTPS redirect
+        redirect scheme https code 301 if !{ ssl_fc }
+
+      # HTTPS Frontend - Main Application UI
+      frontend https_frontend
+        bind *:8443 ssl crt /etc/ssl/certs/haproxy.pem
+        mode http
+        option forwardfor except 127.0.0.0/8
+
+        # Hostname-based routing for production domain
+        acl is_mpm hdr(host) -i portal.example.com
+        acl is_vault hdr(host) -i dfsp-vault.mojalab.example.com
+        acl is_mcc hdr(host) -i dfsp-mcc.mojalab.example.com
+        acl is_experience_api path_beg /experience-api
+        acl is_management_api path_beg /management-api
+        acl is_auth path_beg /auth
+        
+        # Route to appropriate backend based on hostname
+        use_backend mpm_experience_backend if is_mpm is_experience_api
+        use_backend mpm_management_backend if is_mpm is_management_api
+        use_backend auth_backend if is_mpm is_auth
+        use_backend mpm_backend if is_mpm
+        use_backend vault_backend if is_vault
+        use_backend mcc_backend if is_mcc
+        
+        default_backend mpm_backend
+
+      # TCP Frontend for SKD Adapter inbount
+      frontend tcp_sdk_inbound_frontend
+        bind *:4000
+        mode tcp
+        default_backend tcp_sdk_inbound_backend
+
+      # TCP Frontend for SKD Adapter outbound
+      frontend tcp_sdk_outbound_frontend
+        bind *:4001
+        mode tcp
+        default_backend tcp_sdk_outbound_backend
+
+      # TCP Frontend for SKD Adapter outbound
+      frontend tcp_sdk_test_frontend
+        bind *:4002
+        mode tcp
+        default_backend tcp_sdk_test_backend
+
+      # Frontend Backend
+      backend mpm_backend
+        mode http
+        balance roundrobin
+        option httpchk
+        http-check expect status 200
+        server frontend1 pm4ml-frontend:80 check maxconn 100
+
+      # Vault Backend
+      backend vault_backend
+        mode http
+        balance roundrobin
+        option httpchk
+        http-check expect status 200
+        server vault1 pm4ml-vault-headless:8200 check maxconn 50
+
+
+      # Auth (Keycloack) Backend
+      backend auth_backend
+        mode http
+        balance roundrobin
+        option httpchk
+        http-check expect status 200
+        server keycloak1 pm4ml-keycloak:8080 check maxconn 100
+
+      # Experience API Backend
+      backend mpm_experience_backend
+        mode http
+        balance roundrobin
+        option httpchk
+        http-check expect status 200
+        # Path rewriting for experience API
+        http-request set-path %[path,regsub(^/experience-api,)]
+        server expapi1 pm4ml-experience-api:80 check maxconn 100
+
+      # Management API Backend
+      backend mpm_management_backend
+        mode http
+        balance roundrobin
+        option httpchk
+        http-check expect status 200
+        # Path rewriting for management API
+        http-request set-path %[path,regsub(^/management-api,)]
+        server mgmtapi1 pm4ml-management-api:80 check maxconn 100
+
+      # Mojaloop Core Connector Backend
+      backend mcc_backend
+        mode http
+        balance roundrobin
+        option httpchk
+        http-check expect status 200
+        server mcc1  pm4ml-mojaloop-core-connector:3003 check maxconn 100
+
+      # SDK adapter inbound Backend
+      backend tcp_sdk_inbound_backend
+        mode tcp
+        balance roundrobin
+        option tcp-check
+        server sdk1 pm4ml-sdk-scheme-adapter-api-svc:4000
+
+      # SDK adapter inbound Backend
+      backend tcp_sdk_outbound_backend
+        mode tcp
+        balance roundrobin
+        option tcp-check
+        server sdk2 pm4ml-sdk-scheme-adapter-api-svc:4001
+
+      # SDK adapter inbound Backend
+      backend tcp_sdk_test_backend
+        mode tcp
+        balance roundrobin
+        option tcp-check
+        server sdk3 pm4ml-sdk-scheme-adapter-api-svc:4002
+
+      # HAProxy Stats Frontend
+      frontend stats
+        bind *:8404
+        mode http
+        stats uri /stats
+        stats realm HAProxy\ Statistics
+        stats auth admin:admin123
+        stats refresh 10s
+        stats enable

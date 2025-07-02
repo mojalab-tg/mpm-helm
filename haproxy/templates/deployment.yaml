@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "haproxy.fullname" . }}
+  labels:
+    {{- include "haproxy.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "haproxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "haproxy.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "haproxy.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              protocol: TCP
+            - name: tcp-4000
+              containerPort: 4000
+              protocol: TCP
+            - name: tcp-4001
+              containerPort: 4001
+              protocol: TCP
+            - name: tcp-4002
+              containerPort: 4002
+              protocol: TCP
+            - name: stats
+              containerPort: 8404
+              protocol: TCP
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.path }}
+              port: {{ .Values.livenessProbe.port }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.path }}
+              port: {{ .Values.readinessProbe.port }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: STATS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "haproxy.fullname" . }}-stats
+                  key: username
+            - name: STATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "haproxy.fullname" . }}-stats
+                  key: password
+          volumeMounts:
+            - name: haproxy-config
+              mountPath: /usr/local/etc/haproxy/haproxy.cfg
+              subPath: haproxy.cfg
+            {{- if .Values.certificates.certManager.enabled }}
+            - name: haproxy-tls
+              mountPath: /etc/ssl/certs
+              readOnly: true
+            {{- else if .Values.certificates.secrets.enabled }}
+            - name: haproxy-tls-bundle
+              mountPath: /etc/ssl/certs/haproxy.pem
+              subPath: haproxy.pem
+              readOnly: true
+            {{- end }}
+            - name: haproxy-stats-socket
+              mountPath: /var/lib/haproxy
+      volumes:
+        - name: haproxy-config
+          configMap:
+            name: {{ include "haproxy.fullname" . }}-config
+        {{- if .Values.certificates.certManager.enabled }}
+        - name: haproxy-tls
+          secret:
+            secretName: {{ .Values.certificates.certManager.certificate.secretName }}
+        {{- else if .Values.certificates.secrets.enabled }}
+        - name: haproxy-tls-bundle
+          secret:
+            secretName: {{ include "haproxy.fullname" . }}-tls-bundle
+        {{- end }}
+        - name: haproxy-stats-socket
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }} 

@@ -1,0 +1,93 @@
+# Default values for kafka.
+# This is a YAML-formatted file.
+
+# Kafka configuration
+kafka:
+  # Number of Kafka replicas (1-3)
+  replicaCount: 1
+
+  # Bitnami Kafka image
+  image:
+    registry: docker.io
+    repository: bitnami/kafka
+    tag: "3.6.0-debian-11-r1"
+    pullPolicy: IfNotPresent
+
+  # KRaft mode configuration
+  kraft:
+    enabled: true
+    clusterId: "N2Q0ZTNlMWFhMTgyNDhiZj"
+
+  # Auto initialization
+  autoCreateTopicsEnable: true
+
+  # Security configuration
+  security:
+    autoTls: false
+    plaintext: true
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 9092
+    targetPort: 9092
+
+  # Resource limits
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  # Node selector and affinity
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Persistence
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: kafka.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+# ServiceMonitor for Prometheus monitoring
+serviceMonitor:
+  enabled: false
+  namespace: ""
+  interval: 30s
+  path: /metrics
+  port: metrics
+  labels: {}
+
+# Common labels
+commonLabels: {}
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1001
+
+# Container security context
+securityContext:
+  runAsUser: 1001
+  runAsNonRoot: true

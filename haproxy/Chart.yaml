@@ -1,0 +1,11 @@
+apiVersion: v2
+name: haproxy
+description: A Helm chart for HAProxy load balancer with HTTP, HTTPS, and TCP proxy support
+type: application
+version: 0.1.0
+appVersion: "2.8.0"
+keywords:
+  - haproxy
+  - load-balancer
+  - proxy
+  - ingress

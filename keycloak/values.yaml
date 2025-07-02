@@ -1,0 +1,33 @@
+image:
+  repository: quay.io/keycloak/keycloak
+  tag: 22.0.1
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+keycloak:
+  adminUser: admin
+  adminPassword: admin
+  extraArgs:
+    - --import-realm
+  # If true, will create a config map with realm-export.json from the value below
+  importRealm: false
+  # Base64 encoded realm-export.json
+  realmExport: ""
+  # Path to realm import file in the container
+  realmImportPath: /opt/keycloak/data/import/realm-export.json

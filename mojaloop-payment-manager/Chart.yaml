@@ -1,0 +1,85 @@
+apiVersion: v2
+version: 10.2.0
+appVersion: "v10.2.0"
+description: Helm chart for Mojaloop Payment Manager
+name: mojaloop-payment-manager
+maintainers:
+  - name: James Bush
+    email: james.bush@modusbox.com
+  - name: David Fry
+    email: david.fry@modusbox.com
+dependencies:
+  - name: pm4ml-ui
+    version: 1.17.6
+    repository: file://../pm4ml-ui
+    alias: frontend
+    condition: frontend.enabled
+  - name: pm4ml-experience-api
+    version: 1.8.26
+    repository: file://../pm4ml-experience-api
+    alias: experience-api
+    condition: experience-api.enabled
+  - name: pm4ml-management-api-service
+    version: 3.1.0
+    repository: file://../pm4ml-management-api-service
+    alias: management-api
+    condition: management-api.enabled
+  - name: redis
+    version: 17.6.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: sdk-scheme-adapter
+    version: 1.9.1-iso.20162
+    repository: http://mojaloop.io/helm/repo
+    alias: scheme-adapter
+    condition: scheme-adapter.enabled
+  - name: mojaloop-core-connector
+    version: 1.1.2
+    repository: file://../mojaloop-core-connector
+    condition: mojaloop-core-connector.enabled
+  - name: mojaloop-payment-token-adapter
+    version: 1.0.3
+    repository: file://../mojaloop-payment-token-adapter
+    condition: mojaloop-payment-token-adapter.enabled
+  - name: prometheus
+    version: 11.16.9
+    repository: https://prometheus-community.github.io/helm-charts
+    alias: prometheus
+    condition: prometheus.enabled
+  - name: vault
+    version: 0.1.0
+    repository: file://../vault
+    alias: vault
+    condition: vault.enabled
+  - name: ml-testing-toolkit
+    version: 17.4.0
+    repository: http://mojaloop.io/helm/repo
+    alias: ttk
+    condition: ttk.enabled
+  - name: keycloak
+    version: 0.1.0
+    repository: file://../keycloak
+    alias: keycloak
+    condition: keycloak.enabled
+  - name: kafka
+    version: 0.1.0
+    repository: file://../kafka
+    alias: kafka
+    condition: kafka.enabled
+  - name: sim-backend
+    version: 1.0.5
+    repository: file://../mojaloop-simulator-backend
+    condition: sim-backend.enabled
+  - name: sim-ui
+    version: 0.1.0
+    repository: file://../mojaloop-simulator-ui
+    condition: sim-ui.enabled
+  - name: common
+    version: 1.x.x
+    repository: https://charts.bitnami.com/bitnami
+    tags:
+      - bitnami-common
+  - name: haproxy
+    version: 0.1.0
+    repository: file://../haproxy
+    condition: haproxy.enabled

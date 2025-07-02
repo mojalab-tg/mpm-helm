@@ -1,0 +1,19 @@
+{{- if .Values.certificates.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.certificates.certManager.certificate.name }}
+  labels:
+    {{- include "haproxy.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.certificates.certManager.certificate.secretName }}
+  issuerRef:
+    name: {{ .Values.certificates.certManager.issuer.name }}
+    kind: {{ .Values.certificates.certManager.issuer.kind }}
+  dnsNames:
+    {{- range .Values.certificates.certManager.certificate.dnsNames }}
+    - {{ . | quote }}
+    {{- end }}
+  duration: {{ .Values.certificates.certManager.certificate.duration }}
+  renewBefore: {{ .Values.certificates.certManager.certificate.renewBefore }}
+{{- end }} 

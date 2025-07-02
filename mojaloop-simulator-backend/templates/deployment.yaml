@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sim-backend
+  labels: &labels
+    {{- include "sim-backend.common-labels" $ | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sim-backend
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      containers:
+      - name: app
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: simapi
+          containerPort: 3000 # these are hard-coded in the service
+          protocol: TCP
+        - name: reportapi
+          containerPort: 3002 # these are hard-coded in the service
+          protocol: TCP
+        - name: testapi
+          containerPort: 3003 # these are hard-coded in the service
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+            scheme: HTTP
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+            scheme: HTTP
+        env:
+        {{- range $k, $v := .Values.env }}
+        - name: {{ $k }}
+          value: {{ $v | quote }}
+        {{- end }}
+        volumeMounts:
+        - name: rules
+          mountPath: /rules/
+      volumes:
+      - name: rules
+        configMap:
+          name: sim-backend-rules

@@ -1,0 +1,211 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vault.fullname" . }}-config
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+data:
+  vault.hcl: |
+    {{- include "vault.configuration" . | nindent 4 }}
+  
+  unsealer.sh: |
+    #!/usr/bin/dumb-init /bin/sh
+    
+    echo "Starting Vault auto-unsealer sidecar for Domain : $DOMAIN..."
+    
+    # Function to enable AppRole authentication
+    enable_app_role_auth() {
+      echo "📋 Enabling AppRole authentication..."
+      vault auth enable approle || echo "AppRole already enabled"
+      vault write auth/approle/role/mpm-role secret_id_ttl=1000m token_ttl=1000m token_max_ttl=1000m
+      echo "✅ AppRole enabled"
+    }
+    
+    # Function to generate role-id and secret-id
+    generate_secret_id() {
+      echo "🔑 Generating role-id and secret-id..."
+      vault read -field=role_id auth/approle/role/mpm-role/role-id > /tmp/shared/role-id
+      vault write -field=secret_id -f auth/approle/role/mpm-role/secret-id > /tmp/shared/secret-id
+      echo "✅ role-id and secret-id generated in /tmp/shared/"
+    }
+    
+    # Function to populate Vault with PKI and secrets
+    populate_data() {
+      echo "🔐 Setting up PKI and secrets..."
+      
+      # Enable secrets engines
+      vault secrets enable -path=pki pki || echo "PKI already enabled"
+      vault secrets enable -path=secrets kv || echo "KV secrets already enabled"
+      vault secrets tune -max-lease-ttl=97600h pki || echo "PKI already tuned"
+      
+      # Generate root CA
+      vault write -field=certificate pki/root/generate/internal \
+        common_name="$DOMAIN" \
+        ttl=97600h > /tmp/shared/root-ca.crt
+      
+      # Configure PKI URLs
+      vault write pki/config/urls \
+        issuing_certificates="http://127.0.0.1:8200/v1/pki/ca" \
+        crl_distribution_points="http://127.0.0.1:8200/v1/pki/crl"
+      
+      # Create PKI roles
+      vault write pki/roles/$DOMAIN \
+        allowed_domains=$DOMAIN \
+        allow_subdomains=true \
+        allow_any_name=true \
+        allow_localhost=true \
+        enforce_hostnames=false \
+        require_cn=false \
+        max_ttl=97600h
+      
+      vault write pki/roles/client-cert-role \
+        allowed_domains=$DOMAIN \
+        allow_subdomains=true \
+        allow_any_name=true \
+        allow_localhost=true \
+        enforce_hostnames=false \
+        require_cn=false \
+        max_ttl=97600h
+      
+      vault write pki/roles/server-cert-role \
+        allowed_domains=$DOMAIN \
+        allow_subdomains=true \
+        allow_any_name=true \
+        allow_localhost=true \
+        enforce_hostnames=false \
+        require_cn=false \
+        max_ttl=97600h
+      
+      # Create and apply policy
+      echo "📜 Creating Vault policy..."
+      cat > /tmp/policy.hcl <<EOF
+    # List, create, update, and delete key/value secrets
+    path "secrets/*"
+    {
+      capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+    }
+    
+    path "kv/*"
+    {
+      capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+    }
+    
+    path "pki/*"
+    {
+      capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+    }
+    
+    path "pki_int/*"
+    {
+      capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+    }
+    EOF
+      
+      vault policy write mpm-policy /tmp/policy.hcl
+      vault write auth/approle/role/mpm-role policies=mpm-policy ttl=1h
+      
+      # Setup intermediate PKI
+      vault secrets enable -path=pki_int pki || echo "Intermediate PKI already enabled"
+      vault secrets tune -max-lease-ttl=43800h pki_int || echo "Intermediate PKI already tuned"
+      vault write pki_int/roles/$DOMAIN \
+        allowed_domains=$DOMAIN \
+        allow_subdomains=true \
+        allow_any_name=true \
+        allow_localhost=true \
+        enforce_hostnames=false \
+        max_ttl=600h
+      
+      echo "🎉 Data population completed successfully"
+    }
+    
+    # Main unsealer loop
+    while true; do
+      echo "🔍 Checking Vault status..."
+      # Check Vault status
+      status_output=$(vault status 2>&1)
+
+      # Check if Vault is initialized
+      if echo "$status_output" | grep -q '^Initialized *true'; then
+        echo "✅ Vault is initialized."
+
+        # Now check if it is sealed
+        if echo "$status_output" | grep -q '^Sealed *false'; then
+          echo "✅ Vault is responding and unsealed"
+      
+          # Set environment variables for the script
+          DOMAIN="${DOMAIN:-localhost}"
+          export VAULT_TOKEN=$(cat /vault/keys/root-token 2>/dev/null || echo "")
+          
+          # Run post-unseal configuration if needed
+          if [ ! -f "/tmp/shared/role-id" ]; then
+            echo "🔧 Running post-unseal configuration..."
+            if [ -z "$VAULT_TOKEN" ]; then
+              echo "⚠️ Warning: No root token available, skipping post-unseal configuration"
+            else
+              echo "🚀 Configuring Vault for MPM..."
+              enable_app_role_auth
+              generate_secret_id
+              populate_data
+              echo "🎉 Vault configured successfully for MPM!"
+            fi
+          else
+            generate_secret_id
+            echo "✅ Vault already configured for MPM"
+          fi
+        else
+          echo "🔒 Vault is sealed, attempting to unseal..."
+    
+          if [ -d "/vault/keys" ] && [ -f "/vault/keys/unseal-key-0" ]; then
+            echo "🔑 Found unseal keys, proceeding..."
+            
+            UNSEAL_SUCCESS=false
+            for i in $(seq 0 4); do
+              echo "  Trying unseal key $i..."
+              KEY_FILE="/vault/keys/unseal-key-$i"
+              
+              if [ -f "$KEY_FILE" ]; then
+                KEY=$(cat "$KEY_FILE" 2>/dev/null || echo "")
+                if [ -n "$KEY" ]; then
+                  if vault operator unseal "$KEY" >/dev/null 2>&1; then
+                    echo "  ✅ Key $i applied successfully"
+                    if vault status >/dev/null 2>&1; then
+                      echo "🎉 Vault unsealed successfully!"
+                      UNSEAL_SUCCESS=true
+                      break
+                    fi
+                  else
+                    echo "  ⚠️  Key $i failed to unseal"
+                  fi
+                else
+                  echo "  ❌ Key $i file is empty"
+                fi
+              else
+                echo "  ❌ Key $i file not found"
+                break
+              fi
+            done
+            
+            if [ "$UNSEAL_SUCCESS" = "false" ]; then
+              echo "❌ Failed to unseal with available keys"
+            fi
+          else
+            echo "⏳ Unseal keys not available yet (waiting for initialization)"
+          fi
+        fi
+      elif echo "$status_output" | grep -q '^Initialized *false'; then
+        echo "⏳ Vault not ready yet (possibly uninitialized) - waiting..."
+      else
+        echo "⚠️ Could not determine Vault status. Is Vault reachable?"
+        echo "⏳ Vault not responding yet - waiting..."
+      fi
+      
+      # Wait before next check
+      {{- if eq .Values.init.method "standard-job" }}
+      sleep 60
+      {{- else }}
+      sleep 30
+      {{- end }}
+    done
+{{- end }}

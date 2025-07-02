@@ -1,0 +1,133 @@
+# Default values for pm4ml-management-api-service.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: pm4ml/mojaloop-payment-manager-management-api
+  tag: 6.5.0
+  pullPolicy: IfNotPresent
+
+config:
+  tlsClientCSRParametersData: |-
+    {
+      "subject": {
+        "C": "US",
+        "L": "test",
+        "O": "test",
+        "OU": "test"
+      },
+      "extensions": {
+        "subjectAltName": {
+          "dns": [
+          ],
+          "ips": [
+          ]
+        }
+      }
+    }
+  tlsServerCSRParametersData: |-
+    {
+      "subject": {
+        "C": "US",
+        "L": "test",
+        "O": "test",
+        "OU": "test"
+      },
+      "extensions": {
+        "subjectAltName": {
+          "dns": [
+          ],
+          "ips": [
+          ]
+        }
+      }
+    }
+  caCSRParametersData: |-
+    {
+      "CN": "DFSPCA",
+      "E": "ca@test.com",
+      "O": "test",
+      "OU": "test",
+      "C": "US",
+      "ST": "test",
+      "L": "test"
+    }
+
+env:
+  PEER_ENDPOINT: mojaloop.io
+  CACHE_URL: redis://redis-master:6379
+  DFSP_ID: test
+  HUB_IAM_PROVIDER_URL: https://change.me
+  MCM_SERVER_ENDPOINT: http://mcm-server
+  MCM_CLIENT_REFRESH_INTERVAL: 300
+  MCM_CLIENT_SECRETS_LOCATION: /tmp
+  MCM_API_TOKEN: test
+  DFSP_CLIENT_CSR_PARAMETERS: /resources/tlsClientCSRParameters.json
+  DFSP_SERVER_CSR_PARAMETERS: /resources/tlsServerCSRParameters.json
+  CA_CSR_PARAMETERS: /resources/caCSRParameters.json
+  PRIVATE_KEY_LENGTH: 2048
+  PRIVATE_KEY_ALGORITHM: rsa
+  CONTROL_LISTEN_PORT: 4005
+  VAULT_ENDPOINT: http://vault:8200
+  VAULT_AUTH_METHOD: K8S
+  VAULT_K8S_ROLE: vault-pm4ml-auth
+  VAULT_K8S_TOKEN_FILE: /var/run/secrets/kubernetes.io/serviceaccount/token
+  VAULT_ROLE_ID_FILE: /vault/role-id
+  VAULT_ROLE_SECRET_ID_FILE: /vault/secret-id
+  VAULT_PKI_SERVER_ROLE: server-role
+  VAULT_PKI_CLIENT_ROLE: client-role
+  VAULT_MOUNT_PKI: pki
+  VAULT_MOUNT_KV: secrets
+  MOJALOOP_CONNECTOR_FQDN: connector.fsp.example.com
+  CERT_MANAGER_ENABLED: false
+  CERT_MANAGER_SERVER_CERT_SECRET_NAME: dummy
+  CERT_MANAGER_SERVER_CERT_SECRET_NAMESPACE: dummy
+  ENABLE_TEST_API: true
+  TEST_API_PORT: 9050
+  CALLBACK_URL: connector.fsp.example.com:443
+  ENABLE_VISUALIZER: true
+  ENABLE_UI_API_SERVER: true
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+#serviceAccountName: saname
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  annotations:
+    {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths: []
+
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources:
+  {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

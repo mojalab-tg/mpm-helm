@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pm4ml-management-api-service.fullname" . }}
+  annotations:
+    reloader.stakater.com/auto: 'true'
+  labels:
+{{ include "pm4ml-management-api-service.labels" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "pm4ml-management-api-service.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        networking.kubernetes.io/ip-family-policy: "IPv4Only"
+      labels:
+        app.kubernetes.io/name: {{ include "pm4ml-management-api-service.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- if .Values.imagePullCredentials }}
+      imagePullSecrets:
+        - name: {{ include "pm4ml-management-api-service.fullname" . }}-cred
+      {{- end }}
+      {{- if .Values.serviceAccountName }}
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- range $key, $val := .Values.env }}
+            {{- if $.Values.env.CLIENT_SECRET_NAME }}
+            {{- if and (ne "CLIENT_SECRET_NAME" $key) (ne "CLIENT_SECRET_KEY" $key) (ne "AUTH_CLIENT_SECRET" $key) }}
+            - name: {{$key}}
+              value: {{$val | quote}}
+            {{- else if eq "CLIENT_SECRET_NAME" $key}}
+            - name: AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.env.CLIENT_SECRET_NAME }}
+                  key: {{ $.Values.env.CLIENT_SECRET_KEY }}
+            {{- end }}
+            {{- else }}
+            - name: {{$key}}
+              value: {{$val | quote}}
+            {{- end }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+            - name: control
+              containerPort: {{ .Values.env.CONTROL_LISTEN_PORT }}
+              protocol: TCP
+            - name: testapi
+              containerPort: {{ .Values.env.TEST_API_PORT }}
+              protocol: TCP
+          volumeMounts:
+          - mountPath: /vault
+            name: vault-shared
+            readOnly: true
+          - mountPath: /secrets
+            name: secret-volume
+          - mountPath: /resources
+            name: tls-configmap
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+      - name: vault-shared
+        hostPath:
+          path: /tmp/vault-shared  # Same path as Vault
+          type: DirectoryOrCreate
+      - name: secret-volume
+        emptyDir: {}
+      - name: tls-configmap
+        configMap:
+            name: {{ include "pm4ml-management-api-service.fullname" . }}-tls-configmap
+            items:
+            - key: tlsClientCSRParameters.json
+              path: tlsClientCSRParameters.json
+            - key: tlsServerCSRParameters.json
+              path: tlsServerCSRParameters.json
+            - key: caCSRParameters.json
+              path: caCSRParameters.json
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
